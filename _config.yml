@@ -10,7 +10,7 @@ title: Dyllon Gagnier
 email: dyllongagnier@gmail.com
 description: > # this means to ignore newlines until "baseurl:"
   A site containing various client side JavaScript apps and the musings of a
-  programmer/philosopher (though a poor one of both proffessions).
+  programmer/philosopher (though a poor one of both professions).
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "https://slaymaker1907.github.io" # the base hostname & protocol for your site
 github_username:  slaymaker1907
