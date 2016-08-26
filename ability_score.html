@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Ability score chooser</title>
+</head>
+
+<link href="/assets/bootstrap-3.3.6/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<body>
+
+<div class="container">
+  <div class="page-header">
+      <h1>Dungeons and Dragons 5e Attribute Calculator</h1>
+  </div>
+  <form oninput="recalculateAll();">
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Strength">Strength: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Strength" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Strength_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Strength_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Dexterity">Dexterity: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Dexterity" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Dexterity_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Dexterity_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Constitution">Constitution: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Constitution" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Constitution_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Constitution_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Intellect">Intellect: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Intellect" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Intellect_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Intellect_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Wisdom">Wisdom: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Wisdom" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Wisdom_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Wisdom_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="row form-group">
+      <div class="col-xs-2">
+        <label for="Charisma">Charisma: </label>
+      </div>
+      <div class="col-xs-10">
+        <div class="row">
+          <div class="col-xs-4">
+            <input id="Charisma" class="form-control" type="number" min="8" max="15" value="8">
+          </div>
+          <div class="col-xs-1">
+            <p>+</p>
+          </div>
+          <div class="col-xs-4">
+            <input id="Charisma_mod" type="number" min="0" max="12" value="0" class="form-control">
+          </div>
+          <div class="col-xs-1">
+            <p>=</p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="Charisma_sum"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-xs-10 col-xs-offset-2">
+        <div class="row">
+          <div class="col-xs-1 col-xs-offset-9">
+            <p><strong>Cost:</strong></p>
+          </div>
+          <div class="col-xs-2">
+            <p><span id="final-result">0</span></p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+
+  <div class="row">
+    <div class="xs-col-12">
+      <hr />
+    </div>
+  </div>
+  <div class="row">
+    <div class="xs-col-12">
+      <p>Contribute or analyze source at <a href="https://github.com/slaymaker1907/dnd-stuff">GitHub</a>. Source is released through the <a href="https://github.com/slaymaker1907/dnd-stuff/blob/master/LICENSE">MIT</a> license.</p>
+    </div>
+  </div>
+</div>
+
+</body>
+
+<script src="/assets/jquery-2.2.4.min.js"></script>
+<script>
+var getAttrCost = function(attrs) {
+  var sum = 0;
+  for(var i in attrs) {
+    var current = attrs[i];
+    if (current < 14)
+      sum += current - 8;
+    else if (current == 14)
+      sum += 7;
+    else
+      sum += 9
+    }
+
+    return sum;
+  };
+
+var extractAttrs = function(id) {
+  var element = $('#' + id);
+  if (element === null){
+    console.log('Could not find element with id=' + id);
+  }
+  return parseInt(element.val());
+}
+
+var mapFunc = function(func, arr) {
+  var result = [];
+  for (var i in arr) {
+    result.push(func(arr[i]));
+  }
+
+  return result;
+}
+
+var attributes = ['Strength', 'Dexterity', 'Constitution', 'Intellect', 'Wisdom', 'Charisma']
+var getCurrentAttrs = function() {
+  return mapFunc(extractAttrs, attributes);
+}
+
+var recalculateAll = function() {
+  var attrs = getCurrentAttrs();
+  var sum = getAttrCost(attrs);
+  var result = $('#final-result');
+  result.text(sum);
+  computeSum();
+}
+
+var computeSum = function() {
+  var recomputeAttr = function(attr) {
+    var base = extractAttrs(attr);
+    var mod = extractAttrs(attr + '_mod');
+    var sum = base + mod;
+    var elementId = '#' + attr + '_sum';
+    var element = $(elementId);
+    if (element === null){
+      console.log('Could not find element with id=' + elementId);
+    }
+    $('#' + attr + '_sum').text(sum);
+    return sum;
+  }
+  mapFunc(recomputeAttr, attributes);
+}
+
+$(document).ready(recalculateAll);
+</script>
+
+</html>
