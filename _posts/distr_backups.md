@@ -1,6 +1,9 @@
 ---
+layout: post
 title: "Project Idea: Distributed Backups Using Desktop Machines"
 author: Dyllon Gagnier
+date:   2016-09-09
+categories: senior-project
 ---
 # Introduction
 
