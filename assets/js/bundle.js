@@ -325,14 +325,22 @@
 	      var output;
 	      if (this.state.finalHash) {
 	        var outTitle = _react2.default.createElement(
-	          "h3",
+	          "h5",
 	          null,
 	          "Pasword Output"
 	        );
 	        output = _react2.default.createElement(
-	          _reactBootstrap.Panel,
-	          { header: outTitle, bsStyle: "success" },
-	          this.state.finalHash
+	          _reactBootstrap.Row,
+	          null,
+	          _react2.default.createElement(
+	            _reactBootstrap.Col,
+	            { xs: 12 },
+	            _react2.default.createElement(
+	              _reactBootstrap.Panel,
+	              { header: outTitle, bsStyle: "success" },
+	              this.state.finalHash
+	            )
+	          )
 	        );
 	      }
 
@@ -340,60 +348,76 @@
 	        "div",
 	        null,
 	        _react2.default.createElement(
-	          _reactBootstrap.Form,
-	          { horizontal: true },
-	          _react2.default.createElement(PasswordForm, { onChange: this.hashChanged.bind(this) })
+	          _reactBootstrap.Row,
+	          null,
+	          _react2.default.createElement(
+	            _reactBootstrap.Col,
+	            { xs: 12 },
+	            _react2.default.createElement(
+	              _reactBootstrap.Form,
+	              { horizontal: true },
+	              _react2.default.createElement(PasswordForm, { onChange: this.hashChanged.bind(this) })
+	            )
+	          )
 	        ),
 	        _react2.default.createElement(
-	          _reactBootstrap.Form,
-	          { inline: true },
+	          _reactBootstrap.Row,
+	          null,
 	          _react2.default.createElement(
-	            _reactBootstrap.FormGroup,
-	            { controlId: "hashType" },
+	            _reactBootstrap.Col,
+	            { xs: 12 },
 	            _react2.default.createElement(
-	              _reactBootstrap.ControlLabel,
-	              null,
-	              "Password type"
-	            ),
-	            _react2.default.createElement(
-	              _reactBootstrap.FormControl,
-	              { componentClass: "select", value: this.state.hashType, onChange: this.hashTypeChanged.bind(this) },
+	              _reactBootstrap.Form,
+	              { inline: true },
 	              _react2.default.createElement(
-	                "option",
-	                { value: "special" },
-	                "Special characters"
+	                _reactBootstrap.FormGroup,
+	                { controlId: "hashType" },
+	                _react2.default.createElement(
+	                  _reactBootstrap.ControlLabel,
+	                  null,
+	                  "Password type: "
+	                ),
+	                _react2.default.createElement(
+	                  _reactBootstrap.FormControl,
+	                  { componentClass: "select", value: this.state.hashType, onChange: this.hashTypeChanged.bind(this) },
+	                  _react2.default.createElement(
+	                    "option",
+	                    { value: "special" },
+	                    "Special characters"
+	                  ),
+	                  _react2.default.createElement(
+	                    "option",
+	                    { value: "words" },
+	                    "English words"
+	                  ),
+	                  _react2.default.createElement(
+	                    "option",
+	                    { value: "alphaNum" },
+	                    "Alphanumeric"
+	                  ),
+	                  _react2.default.createElement(
+	                    "option",
+	                    { value: "numbers" },
+	                    "Numbers"
+	                  ),
+	                  _react2.default.createElement(
+	                    "option",
+	                    { value: "hexidec" },
+	                    "Hexidecimal"
+	                  )
+	                )
 	              ),
 	              _react2.default.createElement(
-	                "option",
-	                { value: "words" },
-	                "English words"
-	              ),
-	              _react2.default.createElement(
-	                "option",
-	                { value: "alphaNum" },
-	                "Alphanumeric"
-	              ),
-	              _react2.default.createElement(
-	                "option",
-	                { value: "numbers" },
-	                "Numbers"
-	              ),
-	              _react2.default.createElement(
-	                "option",
-	                { value: "hexidec" },
-	                "Hexidecimal"
+	                _reactBootstrap.FormGroup,
+	                { controlId: "maxLength" },
+	                _react2.default.createElement(
+	                  _reactBootstrap.ControlLabel,
+	                  null,
+	                  "Max length: "
+	                ),
+	                _react2.default.createElement(_reactBootstrap.FormControl, { type: "number", min: "1", onChange: this.maxLengthChanged.bind(this) })
 	              )
 	            )
-	          ),
-	          _react2.default.createElement(
-	            _reactBootstrap.FormGroup,
-	            { controlId: "maxLength" },
-	            _react2.default.createElement(
-	              _reactBootstrap.ControlLabel,
-	              null,
-	              "Max length"
-	            ),
-	            _react2.default.createElement(_reactBootstrap.FormControl, { type: "number", min: "1", onChange: this.maxLengthChanged.bind(this) })
 	          )
 	        ),
 	        output
