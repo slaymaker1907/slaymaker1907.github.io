@@ -1,0 +1,18 @@
+{
+  "name": "web-organ",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc index.ts"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "tone": "^0.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^2.3.2"
+  }
+}
