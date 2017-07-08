@@ -1,0 +1,7 @@
+{
+    "name": "PasswordHasher",
+    "short_name": "PasswordHasher",
+    "description": "Provides an easy way to keep track of different passwords.",
+    "display": "standalone",
+    "lang": "en-US"
+}
