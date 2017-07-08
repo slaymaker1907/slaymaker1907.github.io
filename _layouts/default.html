@@ -1,6 +1,8 @@
 <!DOCTYPE html>
 <html>
-  <link rel="manifest" href="/password/manifest.json">
+  {% if manifest %}
+    <link rel="manifest" href="{{manifest}}">
+  {% endif %}
 
   {% include head.html %}
 
