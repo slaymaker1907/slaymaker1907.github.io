@@ -1,0 +1,7 @@
+{
+    "name": "D&D Dice Roller",
+    "short_name": "DiceRoller",
+    "description": "Roll various dice specially optimized for tabletop RPGs.",
+    "display": "standalone",
+    "lang": "en-US"
+}
