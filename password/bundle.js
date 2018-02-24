@@ -1112,8 +1112,8 @@ return C&&(z=p.default.createElement(m.default,{animation:E,anchorOrigin:O,ancho
 w.muiName="MenuItem",w.defaultProps={anchorOrigin:{horizontal:"right",vertical:"top"},checked:!1,desktop:!1,disabled:!1,focusState:"none",insetChildren:!1,targetOrigin:{horizontal:"left",vertical:"top"}},w.contextTypes={muiTheme:d.default.object.isRequired},w.propTypes={},t.default=w},function(e,t,n){var r,o
 r=[n,t,n(0),n(17),n(322),n(348),n(353),n(361),n(112),n(404),n(445),n(446),n(448),n(454),n(455)],void 0===(o=function(e,t,n,r,o,i,a,u,s,l,c,f,p,d){"use strict"
 function h(e,t,r,o){const i=o||"text"
-return[n.createElement(s.default,{type:i,hintText:e,className:"data",onChange:r,value:t})]}function v(e){return e.currentTarget.value}function m(e,t){return[n.createElement("div",{className:"label"},e,":"),n.createElement("div",{className:"data"},t)]}function y(e){const t=d.flow(v,t=>e.changePassword(t,e.passwordId)),r=d.flow(v,d.partial(e.changePassword,e.password)),o=d.flow(v,parseInt,e.changeSize),i=e.sizeLimit?e.sizeLimit.toString():"",a=e.showPassword?e.output:e.output.replace(/./g,"*"),u=e.showPassword?"Hide password":"Show password",s=e.ranges.map(e=>n.createElement(c.default,{value:e,primaryText:e.name})),p=f.default
-return n.createElement("div",{id:"hasher"},n.createElement("div",{id:"input-fields"},h("Password",e.password,t,"password"),h("Identifier",e.passwordId,r),h("Size Limit",i,o,"number")),n.createElement(l.default,{value:e.selectedRange,floatingLabelText:"Output Type",onChange:d.rearg(e.selectRange,[2])},s),n.createElement("div",{id:"output"},m("Output",a),n.createElement("div",{className:"output-button"},n.createElement(p,{id:"copy-password",primary:!0,"data-clipboard-text":e.output,label:"Clipboard"})),n.createElement("div",{className:"output-button"},n.createElement(f.default,{secondary:!0,label:u,onClick:e.showHidePassword})),m("Output Size",e.outputSize),m("Entropy",e.entropy)))}function g(e){const[t,n]=i.computePassword(e)
+return[n.createElement(s.default,{type:i,hintText:e,className:"data",onChange:r,value:t})]}function v(e){return e.currentTarget.value}function m(e,t){return[n.createElement("div",{className:"label"},e,":"),n.createElement("div",{className:"data"},t)]}function y(e){const t=d.flow(v,t=>e.changePassword(t,e.passwordId)),r=d.flow(v,d.partial(e.changePassword,e.password)),o=d.flow(v,parseInt,e.changeSize),i=e.sizeLimit?e.sizeLimit.toString():"",a=e.showPassword?e.output:e.output.replace(/./g,"*"),u=e.showPassword?"Hide password":"Show password",s=e.ranges.map(e=>n.createElement(c.default,{value:e,primaryText:e.name})),p=f.default,y=e.showPassword?"text":"password"
+return n.createElement("div",{id:"hasher"},n.createElement("div",{id:"input-fields"},h("Password",e.password,t,y),h("Identifier",e.passwordId,r),h("Size Limit",i,o,"number")),n.createElement(l.default,{value:e.selectedRange,floatingLabelText:"Output Type",onChange:d.rearg(e.selectRange,[2])},s),n.createElement("div",{id:"output"},m("Output",a),n.createElement("div",{className:"output-button"},n.createElement(p,{id:"copy-password",primary:!0,"data-clipboard-text":e.output,label:"Clipboard"})),n.createElement("div",{className:"output-button"},n.createElement(f.default,{secondary:!0,label:u,onClick:e.showHidePassword})),m("Output Size",e.outputSize),m("Entropy",e.entropy)))}function g(e){const[t,n]=i.computePassword(e)
 return Object.assign({},e,{entropy:n,output:t.join(""),outputSize:t.length})}function b(e){const t=d.partial(d.flowRight,e)
 return{changePassword:t(i.changePassword),selectRange:t(i.changeRange),changeSize:t(i.changeSize),showHidePassword:d.partial(e,{type:i.ActionType.DisplayPassword})}}function _(){const e=o.connect(g,b)(y)
 return n.createElement(u.default,null,n.createElement(e,null))}Object.defineProperty(t,"__esModule",{value:!0}),p(),new a("#copy-password"),i.makeStore().then(e=>{r.render(n.createElement(o.Provider,{store:e},n.createElement(_,null)),document.getElementById("app"))})}.apply(t,r))||(e.exports=o)},function(e,t,n){"use strict"
@@ -2074,15 +2074,19 @@ return l=o,c=s,m&&y?(f=e(l,c),t.dependsOnOwnProps&&(p=t(r,c)),d=n(f,p,c)):m?(e.d
 n(101)},function(e,t,n){(function(r){var o,i,a=this&&this.__awaiter||function(e,t,n,r){return new(n||(n=Promise))(function(o,i){function a(e){try{s(r.next(e))}catch(e){i(e)}}function u(e){try{s(r.throw(e))}catch(e){i(e)}}function s(e){e.done?o(e.value):new n(function(t){t(e.value)}).then(a,u)}s((r=r.apply(e,t||[])).next())})}
 o=[n,t,n(102),n(349),n(350),n(351),n(167),n(352)],void 0===(i=function(e,t,n,o,i,u,s,l){"use strict"
 var c
-function f(e,t){return(n,r)=>r.type===e?t(n,r):n}Object.defineProperty(t,"__esModule",{value:!0}),function(e){e.Computed="COMPUTED",e.Range="RANGE",e.Size="SIZE",e.DisplayPassword="DISPLAY_PASSWORD"}(c=t.ActionType||(t.ActionType={})),t.computePassword=u.createSelector(e=>e.generated,e=>e.selectedRange,e=>e.sizeLimit,(e,t,n)=>{let r=e,o=[]
+Object.defineProperty(t,"__esModule",{value:!0}),function(e){e.Computed="COMPUTED",e.Range="RANGE",e.Size="SIZE",e.DisplayPassword="DISPLAY_PASSWORD"}(c=t.ActionType||(t.ActionType={})),t.computePassword=u.createSelector(e=>e.generated,e=>e.selectedRange,e=>e.sizeLimit,(e,t,n)=>{let r=e,o=[]
 for(;r.compare(s.zero)>0;){let e
-if([r,e]=i.selectFrom(r,t),o.push(e),n&&o.length>=n)break}return[o,i.MaxEntropy-i.entropy(r)]}),t.changePassword=((e,t)=>n=>a(this,void 0,void 0,function*(){const r={payload:{generated:s(0),password:e,passwordId:t},type:c.Computed}
-n(r)
-const o=yield i.hashPassword(t,e),a=Object.assign({},r,{payload:Object.assign({},r.payload,{generated:o})})
-n(a)})),t.changeRange=(e=>{return{type:c.Range,payload:{range:e}}}),t.changeSize=(e=>({type:c.Size,payload:e}))
-const p=f(c.Computed,function(e,t){const n=t.payload
-return Object.assign({},e,n)}),d=f(c.Range,function(e,t){return Object.assign({},e,{selectedRange:t.payload.range})}),h=f(c.Size,function(e,t){return Object.assign({},e,{sizeLimit:t.payload})}),v=f(c.DisplayPassword,function(e){return Object.assign({},e,{showPassword:!e.showPassword})})
-t.makeStore=function(){return a(this,void 0,void 0,function*(){const e=yield i.ranges,a={password:"",passwordId:"",generated:s.zero,ranges:e,selectedRange:e[0],showPassword:!1},u=function(...e){return(t,n)=>e.reduce((e,t)=>t(e,n),t)}(p,d,h,v),c="production"===r.env?n.compose:l.composeWithDevTools,f=n.createStore(u,a,c(n.applyMiddleware(o.default)))
+if([r,e]=i.selectFrom(r,t),o.push(e),n&&o.length>=n)break}return[o,i.MaxEntropy-i.entropy(r)]})
+let f=0
+function p(e,t){return(n,r)=>r.type===e?t(n,r):n}t.changePassword=((e,t)=>n=>a(this,void 0,void 0,function*(){const r=++f,o={payload:{generated:s(0),password:e,passwordId:t},type:c.Computed}
+n(o)
+try{const a=yield i.hashPassword(t,e)
+if(f!==r)return
+const u=Object.assign({},o,{payload:Object.assign({},o.payload,{generated:a})})
+n(u)}catch(e){console.error(`Could not compute password: ${e}`)}})),t.changeRange=(e=>{return{type:c.Range,payload:{range:e}}}),t.changeSize=(e=>({type:c.Size,payload:e}))
+const d=p(c.Computed,function(e,t){const n=t.payload
+return Object.assign({},e,n)}),h=p(c.Range,function(e,t){return Object.assign({},e,{selectedRange:t.payload.range})}),v=p(c.Size,function(e,t){return Object.assign({},e,{sizeLimit:t.payload})}),m=p(c.DisplayPassword,function(e){return Object.assign({},e,{showPassword:!e.showPassword})})
+t.makeStore=function(){return a(this,void 0,void 0,function*(){const e=yield i.ranges,a={password:"",passwordId:"",generated:s.zero,ranges:e,selectedRange:e[0],showPassword:!1},u=function(...e){return(t,n)=>e.reduce((e,t)=>t(e,n),t)}(d,h,v,m),c="production"===r.env?n.compose:l.composeWithDevTools,f=n.createStore(u,a,c(n.applyMiddleware(o.default)))
 return f.dispatch(t.changePassword("","")),f})}}.apply(t,o))||(e.exports=i)}).call(t,n(55))},function(e,t,n){"use strict"
 function r(e){return function(t){var n=t.dispatch,r=t.getState
 return function(t){return function(o){return"function"==typeof o?o(n,r,e):t(o)}}}}t.__esModule=!0
@@ -2096,10 +2100,9 @@ t.defaultRange=a,t.ranges=function(){return i(this,void 0,void 0,function*(){con
 return{size:e.length,draw:t=>e[t],name:"English words"}})}().then(e=>[a,u,e,o])
 const s=new Worker("worker.js")
 let l=!1
-function c(e,t,n){return new Promise(r=>i(this,void 0,void 0,function*(){!function(e){const t=(n,r)=>{if(l)setTimeout(t,10)
-else{l=!0
-try{n(e(s))}catch(e){r(e)}finally{l=!1}}}
-new Promise(t)}(o=>{o.onmessage=(e=>r(e.data)),o.postMessage({password:e,salt:t,options:n})})}))}t.hashPassword=function(e,r){return i(this,void 0,void 0,function*(){const o={N:16384,r:8,p:1,dkLen:t.MaxEntropy/8,encoding:"hex"},i=yield c(r,e,o)
+function c(e){return new Promise(t=>{setTimeout(t,e)})}function f(e,t,n){return function(e){return i(this,void 0,void 0,function*(){for(;l;)yield c(10)
+l=!0
+try{return yield e(s)}finally{l=!1}})}(r=>{return new Promise(o=>{r.onmessage=(e=>o(e.data)),r.postMessage({password:e,salt:t,options:n})})})}t.hashPassword=function(e,r){return i(this,void 0,void 0,function*(){const o={N:16384,r:8,p:1,dkLen:t.MaxEntropy/8,encoding:"hex"},i=yield f(r,e,o)
 return n(i,16)})},t.selectFrom=function(e,t){const n=e.divmod(t.size)
 return[n.quotient,t.draw(n.remainder.toJSNumber())]},t.entropy=function(e){return e.compare(n(1))>0?e.toString(2).length:0}}.apply(t,r))||(e.exports=o)},function(e,t,n){"use strict"
 function r(e,t){return e===t}function o(e){var t=arguments.length>1&&void 0!==arguments[1]?arguments[1]:r,n=null,o=null
