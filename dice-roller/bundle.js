@@ -664,13 +664,13 @@ Object.defineProperty(t,"__esModule",{value:!0}),t.getTransitionProps=function(e
 return{duration:o.transitionDuration||"number"==typeof n?n:n[t.mode],delay:o.transitionDelay}}
 t.reflow=function(e){return e.scrollTop}},function(e,t,n){var r,o
 r=[n,t,n(16),n(0),n(171),n(84),n(185),n(301),n(360),n(136)],void 0===(o=function(e,t,n,r,o,i,a,u,l,s){"use strict"
-function c(e){return r.createElement(u.default,{onChange:e.onChange,type:"number",helperText:e.hint,value:e.value})}Object.defineProperty(t,"__esModule",{value:!0})
+function c(e){return r.createElement(u.default,{style:{flex:"1 1 0"},onChange:e.onChange,type:"number",helperText:e.hint,value:e.value})}Object.defineProperty(t,"__esModule",{value:!0})
 let d=e=>{let t=null
 if(e.result){const n=e.isCrit?e.bonus*e.critx:e.bonus,o=e.result.reduce((e,t)=>e+t,0)+n
 t=r.createElement("p",null,"Roll: ",e.result.join(" + ")," + ",r.createElement("b",null,n)," = ",o)}else t=r.createElement("p",null,"Click roll button for new roll.")
 const n=t=>n=>{let r=n.target.value
 isNaN(r)||(r=parseInt(r)),e.updateRoll({type:v,[t]:r})}
-return r.createElement("div",null,r.createElement(s.FormGroup,{row:!0},r.createElement(a.default,{color:"primary",variant:"raised",onClick:e.rollDice},"Roll"),r.createElement(c,{hint:"Dice count",value:e.diceCount,onChange:n("diceCount")}),r.createElement(c,{hint:"Dice type",value:e.diceType,onChange:n("diceType")}),r.createElement(c,{hint:"Bonus",value:e.bonus,onChange:n("bonus")}),r.createElement(c,{hint:"Critx",value:e.critx,onChange:n("critx")}),r.createElement(s.FormControlLabel,{control:r.createElement(l.default,{checked:e.isCrit}),label:"Crit?",onClick:()=>{e.updateRoll({type:v,isCrit:!e.isCrit})}}),r.createElement(a.default,{color:"secondary",variant:"raised",onClick:e.remove},"Delete")),t)}
+return r.createElement("div",null,r.createElement(s.FormGroup,{row:!0,style:{display:"flex"}},r.createElement(a.default,{color:"primary",variant:"raised",onClick:e.rollDice},"Roll"),r.createElement(c,{hint:"Dice count",value:e.diceCount,onChange:n("diceCount")}),r.createElement(c,{hint:"Dice type",value:e.diceType,onChange:n("diceType")}),r.createElement(c,{hint:"Bonus",value:e.bonus,onChange:n("bonus")}),r.createElement(c,{hint:"Critx",value:e.critx,onChange:n("critx")}),r.createElement(s.FormControlLabel,{control:r.createElement(l.default,{checked:e.isCrit}),label:"Crit?",onClick:()=>{e.updateRoll({type:v,isCrit:!e.isCrit})}}),r.createElement(a.default,{color:"secondary",variant:"raised",onClick:e.remove},"Delete")),t)}
 d=o.connect(void 0,(e,t)=>({updateRoll:n=>e(Object.assign({rollId:t.id},n)),rollDice:()=>e({type:v,rollId:t.id,roll:!0}),remove:()=>e({type:v,rollId:t.id,remove:!0})}))(d)
 const f=o.connect(e=>e,e=>{const t=Object.assign({type:v},y)
 return{addRoll:()=>e(t)}})(e=>r.createElement("div",null,e.diceRolls.map(e=>r.createElement(d,Object.assign({},e,{key:e.id}))),r.createElement(a.default,{variant:"raised",onClick:e.addRoll},"New roll")))
