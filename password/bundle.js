@@ -2756,8 +2756,8 @@ const u=Object.assign({},o,{payload:Object.assign({},o.payload,{generated:a})})
 localStorage.setItem(p,e),n(u)}catch(e){console.error(`Could not compute password: ${e}`)}})),t.changeRange=(e=>{return{type:f.Range,payload:{range:e}}}),t.changeSize=(e=>({type:f.Size,payload:e}))
 const v=h(f.Computed,function(e,t){const n=t.payload
 return Object.assign({},e,n)}),m=h(f.Range,function(e,t){return Object.assign({},e,{selectedRange:t.payload.range})}),y=h(f.Size,function(e,t){return Object.assign({},e,{sizeLimit:t.payload})}),g=h(f.DisplayPassword,function(e){return Object.assign({},e,{showPassword:!e.showPassword})})
-t.makeStore=function(){return a(this,void 0,void 0,function*(){const e=yield i.ranges,a={password:c.defaultTo(localStorage.getItem(p),""),passwordId:"",generated:s.zero,ranges:e,selectedRange:e[0],showPassword:!1},u=function(...e){return(t,n)=>e.reduce((e,t)=>t(e,n),t)}(v,m,y,g),f="production"===r.env?n.compose:l.composeWithDevTools,d=n.createStore(u,a,f(n.applyMiddleware(o.default)))
-return d.dispatch(t.changePassword("","")),d})}}.apply(t,o))||(e.exports=i)}).call(t,n(55))},function(e,t,n){"use strict"
+t.makeStore=function(){return a(this,void 0,void 0,function*(){const e=yield i.ranges,a=c.defaultTo(localStorage.getItem(p),""),u={password:a,passwordId:"",generated:s.zero,ranges:e,selectedRange:e[0],showPassword:!1},f=function(...e){return(t,n)=>e.reduce((e,t)=>t(e,n),t)}(v,m,y,g),d="production"===r.env?n.compose:l.composeWithDevTools,h=n.createStore(f,u,d(n.applyMiddleware(o.default)))
+return h.dispatch(t.changePassword(a,"")),h})}}.apply(t,o))||(e.exports=i)}).call(t,n(55))},function(e,t,n){"use strict"
 function r(e){return function(t){var n=t.dispatch,r=t.getState
 return function(t){return function(o){return"function"==typeof o?o(n,r,e):t(o)}}}}t.__esModule=!0
 var o=r()
