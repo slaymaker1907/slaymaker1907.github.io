@@ -1,0 +1,17 @@
+#buttons {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 25em;
+}
+
+body {
+    font-size: 1.2em;
+}
+
+button {
+    font-size: 1em;
+}
+
+#license {
+    font-size: 0.8em;
+}

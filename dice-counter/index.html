@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dice Counter</title>
+</head>
+
+<!-- <link href="/assets/bootstrap-3.3.6/dist/css/bootstrap.min.css" rel="stylesheet"> -->
+<link href="style.css" rel="stylesheet">
+
+<body>
+
+<div id="buttons">
+  <button>1</button>
+  <button>2</button>
+  <button>3</button>
+  <button>4</button>
+  <button>5</button>
+  <button>6</button>
+  <button>7</button>
+  <button>8</button>
+  <button>9</button>
+  <button>10</button>
+  <button>11</button>
+  <button>12</button>
+</div>
+<p>Result: <span id="result">0</span></p>
+<button id="clear">Clear</button>
+
+<p id="license">Contribute or analyze source at <a href="https://github.com/slaymaker1907/dnd-stuff">GitHub</a>. 
+  Source is released through the <a href="https://github.com/slaymaker1907/dnd-stuff/blob/master/LICENSE">MIT</a> license.
+</p>
+
+</body>
+
+<script>
+
+let result = 0;
+const resultNode = document.getElementById("result");
+
+function updateResult() {
+  resultNode.textContent = result;
+}
+
+const buttons = document.querySelectorAll("#buttons > button");
+for(const button of buttons) {
+  const buttonValue = parseInt(button.textContent);
+  button.addEventListener("click", () => {
+    result += buttonValue;
+    updateResult();
+  });
+}
+
+document.getElementById("clear").addEventListener("click", () => {
+  result = 0;
+  updateResult();
+});
+
+</script>
+
+</html>
