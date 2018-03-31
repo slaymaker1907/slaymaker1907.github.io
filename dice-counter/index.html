@@ -59,10 +59,10 @@ document.getElementById("clear").addEventListener("click", () => {
 
 // Ugly hack to disable zoom from https://stackoverflow.com/questions/4389932/how-do-you-disable-viewport-zooming-on-mobile-safari/39711930#39711930
 document.addEventListener('touchmove', function(event) {
-  event = event.originalEvent || event;
-  if(event.scale && event.scale !== 1) {
+  // event = event.originalEvent || event;
+  // if(event.scale && event.scale !== 1) {
     event.preventDefault();
-  }
+  // }
 }, false);
 
 </script>
