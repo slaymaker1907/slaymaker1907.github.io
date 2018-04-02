@@ -36,24 +36,27 @@
 
 <script>
 
-let result = 0;
+let result = [];
 const resultNode = document.getElementById("result");
 
 function updateResult() {
-  resultNode.textContent = result;
+  let text = result.join(" + ");
+  const sum = result.reduce((x1, x2) => x1+x2, 0);
+  text += ` = ${sum}`;
+  resultNode.textContent = text;
 }
 
 const buttons = document.querySelectorAll("#buttons > button");
 for(const button of buttons) {
   const buttonValue = parseInt(button.textContent);
   button.addEventListener("click", () => {
-    result += buttonValue;
+    result.push(buttonValue);
     updateResult();
   });
 }
 
 document.getElementById("clear").addEventListener("click", () => {
-  result = 0;
+  result = [];
   updateResult();
 });
 
