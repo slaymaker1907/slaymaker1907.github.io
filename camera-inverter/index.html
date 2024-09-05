@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>overwrite with file</title>
+	<!-- <link rel="stylesheet" href=""> -->
+</head>
+
+<style>
+  div {
+      /* width: 500px;
+      height: 400px; */
+      border: 2px solid black;
+      position: relative;
+  }
+
+  video {
+      /* width: 500px;
+      height: 400px; */
+      object-fit: cover;
+      transform: rotate(180deg);
+  }
+
+  img {
+      object-fit: cover;
+      transform: rotate(180deg);
+  }
+</style>
+
+<body>
+  <input id="fileinput" type="file" accept="image/png, image/jpg" />
+  <div>
+    <!-- <video id="camera" autoplay></video> -->
+     <img id="inverted">
+  </div>
+<script>
+// create a reference for our file handle
+
+(() =>
+{
+	// URL.createObjectURL
+// window.URL = window.URL || window.webkitURL;
+
+// const sab = new SharedArrayBuffer(1024);
+// const int32 = new Int32Array(sab);
+
+// // "Server response", used in all examples
+// var response = `
+// const pattern = /^(\\d+)*$/;
+// class MyChannel {
+// 	constructor() {
+// 		this.waitingState = 0;
+// 		this.waiter = null;
+// 		this.message = null;
+// 	}
+
+// 	async nextMessage() {
+// 		if (this.waitingState === 0) {
+// 			this.waiter = Promise.withResolvers();
+// 			this.waitingState = -1;
+// 			const message = await this.waiter.promise;
+// 			this.waitingState = 0;
+// 			return message;
+// 		} else {
+// 			const result = this.message;
+// 			this.waiter.resolve();
+// 			return result;
+// 			const oldResolve = this.waiter.resolve;
+// 			oldResolve();
+// 			await this.waiter.promise;
+// 			return this.message;
+// 		}
+// 	}
+
+// 	async postMessage(message) {
+// 		this.message = message;
+
+// 		if (this.waitingState === 0) {
+// 			this.waiter = Promise.withResolvers();
+// 			this.waitingState = 1;
+
+// 			// wait for message to be read
+// 			await this.waiter.promise;
+
+// 			this.message = null;
+// 			this.waitingState = 0;
+// 		} else {
+// 			const oldResolve = this.waiter.resolve;
+// 			this.waiter = Promise.withResolvers();
+// 			oldResolve();
+// 			await this.waiter.promise;
+// 			return this.message;
+// 		}
+// 	}
+// }
+// let buff = null;
+// self.onmessage=function(e){
+// 	if (!buff) {
+// 		buff = e.data;
+// 	} else  {
+// 		const int32 = new Int32Array(buff);
+// 		Atomics.wait(int32, 0, 0);
+// 		const toRun = e.data;
+// 		postMessage(pattern.test(toRun));
+// 		Atomics.store(int32, 0, 1);
+// 	}
+//  }
+// `;
+
+// var blob;
+// try {
+//     blob = new Blob([response], {type: 'application/javascript'});
+// } catch (e) { // Backwards-compatibility
+//     window.BlobBuilder = window.BlobBuilder || window.WebKitBlobBuilder || window.MozBlobBuilder;
+//     blob = new BlobBuilder();
+//     blob.append(response);
+//     blob = blob.getBlob();
+// }
+// var worker = new Worker(URL.createObjectURL(blob));
+
+// // Test, used in all examples:
+// worker.onmessage = function(e) {
+//     alert('Response: ' + e.data);
+// };
+// worker.postMessage(sab)
+// worker.postMessage('012345678901234567890123456789z');
+// setTimeout(() => {
+// 	console.log("Here");
+// 	Atomics.store(int32, 0, 0);
+// 	Atomics.notify(int32, 0);
+// 	const start = Date.now();
+// 	while (Atomics.load(int32, 0) === 0 && (Date.now() - start) < 10000) {
+// 	}
+// 	console.log(`Work completed ${Date.now() - start}`);
+// 	worker.terminate();
+// 	//Atomics.wait(int32, 0);
+// }, 2000);
+
+const pickerOpts = {
+  types: [
+    {
+      description: "Html",
+      accept: {
+        "html/*": [".html"]
+      },
+    },
+  ],
+  excludeAcceptAllOption: true,
+  multiple: false,
+};
+
+let listener;
+
+async function getFile() {
+	removeEventListener("click", listener);
+  // open file picker, destructure the one element returned array
+  let fileHandle;
+  [fileHandle] = await window.showOpenFilePicker(pickerOpts);
+
+  // run code with our fileHandle
+  const file = await fileHandle.getFile();
+  const webText = await file.text();
+  window.document.documentElement.innerHTML = webText;
+  Array.from(window.document.documentElement.querySelectorAll("script"))
+    .forEach( oldScriptEl => {
+      const newScriptEl = document.createElement("script");
+      
+      Array.from(oldScriptEl.attributes).forEach( attr => {
+        newScriptEl.setAttribute(attr.name, attr.value) 
+      });
+      
+      const scriptText = document.createTextNode(oldScriptEl.innerHTML);
+      newScriptEl.appendChild(scriptText);
+      
+      oldScriptEl.parentNode.replaceChild(newScriptEl, oldScriptEl);
+  });
+}
+
+async function startCamera() {
+  // const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  // const camera = document.getElementById("camera");
+  // camera.muted = true;
+  // camera.srcObject = mediaStream;
+  // mediaStream.addEventListener("loadedmetadata", () => {
+  //   camera.play();
+  // });
+  document.getElementById("fileinput").onchange = (evt) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      document.getElementById("inverted").src = fr.result;
+    };
+    fr.readAsDataURL(evt.target.files[0]);
+  };
+}
+
+// listener = () => {getFile().catch(err => console.error(err))};
+listener = () => {startCamera().catch(err => console.error(err))};
+listener();
+// addEventListener("click", listener);
+})();
+</script>
+
+</body>
+</html>
