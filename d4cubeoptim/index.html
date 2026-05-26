@@ -1937,6 +1937,7 @@ permalink: /d4cubeoptim/
 		function setRunButtons() {
 			els.runBtn.disabled = runInProgress;
 			els.stopBtn.disabled = !runInProgress;
+			els.applyManual.disabled = runInProgress;
 		}
 
 		function renderStatus(text, className) {
@@ -2826,7 +2827,12 @@ permalink: /d4cubeoptim/
 					.filter(Boolean)
 			);
 			let candidates = AFFIXES.filter((a) => isAffixLegalForCurrentSlot(a) && !currentIds.has(a.id));
-			if (prism && prism !== "None" && (mode === "changed" || mode === "added")) {
+			// For "added" only: restrict destinations to the prism's category (Add
+			// Affix always produces an affix in that category). For "changed", allow
+			// the full legal pool — Focused Reroll destinations happen to land in the
+			// prism category, but Chaotic Reroll can land on any legal affix, so both
+			// must remain selectable here.
+			if (prism && prism !== "None" && mode === "added") {
 				candidates = candidates.filter((a) => getAffixCategoriesForMode(a, mode).includes(prism));
 			}
 			return candidates;
