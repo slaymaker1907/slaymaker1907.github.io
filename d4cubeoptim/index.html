@@ -1033,6 +1033,24 @@ permalink: /d4cubeoptim/
 
 				<div class="divider"></div>
 
+				<label style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent);display:block;margin-bottom:6px;">Experimental</label>
+				<div class="field">
+					<label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+						<input type="checkbox" id="use-rust-toggle">
+						<span>
+							Use Rust/WASM optimizer
+							<span style="background:var(--accent);color:#000;font-size:0.7em;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle;letter-spacing:0.04em;">EXPERIMENTAL</span>
+						</span>
+					</label>
+				</div>
+				<div style="font-size:0.84rem;color:var(--muted);margin:4px 0 0;line-height:1.45;">
+					Runs the optimizer in WebAssembly instead of JavaScript. The WASM module loads on first use. Currently
+					<strong>~1.4× slower</strong> than JS due to per-state cache reconstruction — useful mainly for testing and
+					future development. Falls back to JS automatically if the WASM module fails to load.
+				</div>
+
+				<div class="divider"></div>
+
 				<label style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--accent);display:block;margin-bottom:6px;">Slot Legality Overrides</label>
 				<p class="legend" style="margin:0 0 10px;">
 					Add overrides to make an affix legal on a slot that it wouldn't normally appear on.
@@ -1146,6 +1164,7 @@ permalink: /d4cubeoptim/
 		const OVERRIDES_KEY = "d4cubeoptim_overrides_v3";
 		const TIGHTEN_KEY = "d4cubeoptim_tighten_v3";
 		const TIGHTEN_LEVELS = ["none", "light", "heavy", "adaptive"];
+		const USE_RUST_KEY = "d4cubeoptim_use_rust_v3";
 		const WORKER_VERSION = "2026-05-26-v3-reenchant-closed-form";
 
 		const CLASSES = Array.isArray(_cfg.CLASSES) && _cfg.CLASSES.length > 0
@@ -1216,6 +1235,7 @@ permalink: /d4cubeoptim/
 			skillFilter: null, // computed on first sanitize
 			userOverrides: [], // persisted to OVERRIDES_KEY, not main state blob
 			tightenStepsLevel: "none", // persisted to TIGHTEN_KEY, not main state blob
+			useRust: false, // persisted to USE_RUST_KEY, not main state blob
 		};
 
 		let appState = loadState();
@@ -1379,6 +1399,13 @@ permalink: /d4cubeoptim/
 				box.style.display = box.style.display === "none" ? "block" : "none";
 			});
 
+			// Use Rust/WASM toggle (within the Settings modal).
+			const useRustToggle = document.getElementById("use-rust-toggle");
+			useRustToggle.addEventListener("change", () => {
+				appState.useRust = useRustToggle.checked;
+				saveUseRust(appState.useRust);
+			});
+
 			document.getElementById("settings-btn").addEventListener("click", () => {
 				// Default slot to the current item slot (fall back to Helm if Any).
 				const currentSlot = appState.current.gearSlot;
@@ -1388,8 +1415,9 @@ permalink: /d4cubeoptim/
 				overrideClassSelect.value = "Any";
 				document.getElementById("override-affix-input").value = "";
 				document.getElementById("override-add-error").textContent = "";
-				// Sync the Tighten Steps toggle with current state on each open.
+				// Sync toggles with current state on each open.
 				tightenStepsToggle.checked = appState.tightenStepsLevel === "adaptive";
+				useRustToggle.checked = appState.useRust === true;
 				renderOverridesTable();
 				settingsModal.showModal();
 			});
@@ -1635,6 +1663,7 @@ permalink: /d4cubeoptim/
 				stopBuffer,
 				tree: treeCache,
 				tightenStepsLevel: TIGHTEN_LEVELS.includes(appState.tightenStepsLevel) ? appState.tightenStepsLevel : "none",
+				useRust: appState.useRust === true,
 			});
 		}
 
@@ -3392,6 +3421,22 @@ permalink: /d4cubeoptim/
 			} catch { /* storage full — silently ignore */ }
 		}
 
+		function loadUseRust() {
+			try {
+				const raw = localStorage.getItem(USE_RUST_KEY);
+				if (!raw) return false;
+				return JSON.parse(raw) === true;
+			} catch {
+				return false;
+			}
+		}
+
+		function saveUseRust(value) {
+			try {
+				localStorage.setItem(USE_RUST_KEY, JSON.stringify(value === true));
+			} catch { /* storage full — silently ignore */ }
+		}
+
 		// Returns true when the static legality table already permits affixName on slot,
 		// making any user override for that combination redundant.
 		function isAffixStaticallyLegalOnSlot(affixName, slot) {
@@ -3476,10 +3521,12 @@ permalink: /d4cubeoptim/
 				const raw = localStorage.getItem(STORAGE_KEY);
 				const overrides = loadUserOverrides();
 				const tightenStepsLevel = loadTightenStepsLevel();
+				const useRust = loadUseRust();
 				if (!raw) {
 					const s = JSON.parse(JSON.stringify(defaultState));
 					s.userOverrides = overrides;
 					s.tightenStepsLevel = tightenStepsLevel;
+					s.useRust = useRust;
 					return s;
 				}
 				const parsed = JSON.parse(raw);
@@ -3492,6 +3539,7 @@ permalink: /d4cubeoptim/
 					skillFilter: parsed.skillFilter || null,
 					userOverrides: overrides,
 					tightenStepsLevel,
+					useRust,
 				};
 			} catch (error) {
 				return JSON.parse(JSON.stringify(defaultState));
