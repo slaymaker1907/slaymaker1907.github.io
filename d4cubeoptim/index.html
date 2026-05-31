@@ -851,6 +851,7 @@ permalink: /d4cubeoptim/
 							<select id="character-class"></select>
 						</div>
 						<button id="legendary-toggle" class="toggle">Legendary: No</button>
+						<button id="no-enchant-toggle" class="toggle" title="When on, the optimizer treats enchanting as unavailable. Current Enchanted flags on affixes are unchanged (those affixes remain cube-immune as usual).">No Enchant: Off</button>
 						<p id="class-any-warning" class="legend" style="display:none; flex-basis: 100%; margin: 4px 0 0;">
 							Class is Any — the rolling pool includes every class's skills. Set Class to your character for accurate probabilities.
 						</p>
@@ -933,9 +934,11 @@ permalink: /d4cubeoptim/
 						</div>
 
 						<button id="apply-manual" class="btn action-submit">Apply Outcome and Optimize</button>
+						<button id="apply-manual-only" class="btn ghost" style="margin-top:4px;width:100%;">Just Apply Outcome</button>
 					</div>
 					<p class="legend">
 						Use this after each in-game result so the optimizer can continue from the new state.
+						<em>Just Apply Outcome</em> records the result and keeps the same mode/prism/result for rapid data entry without re-optimizing.
 					</p>
 
 					<div class="divider"></div>
@@ -983,6 +986,10 @@ permalink: /d4cubeoptim/
 							<div class="field">
 								<label>Top Candidate Actions</label>
 								<ul class="candidate-list" id="candidate-list"></ul>
+								<div style="margin-top:6px;">
+									<button id="apply-secondary-action" class="btn ghost" style="font-size:0.82rem;" disabled>Set Up Secondary Action</button>
+									<span id="secondary-action-label" style="font-size:0.78rem;color:var(--muted);margin-left:8px;"></span>
+								</div>
 							</div>
 
 							<div class="field">
@@ -1353,6 +1360,7 @@ permalink: /d4cubeoptim/
 			},
 			settings: {
 				thinkingSeconds: 0,
+				noEnchant: false,
 			},
 			lastAction: {
 				mode: "added",
@@ -1391,6 +1399,7 @@ permalink: /d4cubeoptim/
 			characterClass: document.getElementById("character-class"),
 			classAnyWarning: document.getElementById("class-any-warning"),
 			legendaryToggle: document.getElementById("legendary-toggle"),
+			noEnchantToggle: document.getElementById("no-enchant-toggle"),
 
 			currentAffixes: document.getElementById("current-affixes"),
 			targetAffixes: document.getElementById("target-affixes"),
@@ -1404,6 +1413,9 @@ permalink: /d4cubeoptim/
 			manualResult: document.getElementById("manual-result"),
 			manualPrism: document.getElementById("manual-prism"),
 			applyManual: document.getElementById("apply-manual"),
+			applyManualOnly: document.getElementById("apply-manual-only"),
+			applySecondaryAction: document.getElementById("apply-secondary-action"),
+			secondaryActionLabel: document.getElementById("secondary-action-label"),
 
 			resultAction: document.getElementById("result-action"),
 			resultSuccess: document.getElementById("result-success"),
@@ -1775,6 +1787,12 @@ permalink: /d4cubeoptim/
 				renderCurrentControls();
 			});
 
+			els.noEnchantToggle.addEventListener("click", () => {
+				appState.settings.noEnchant = !appState.settings.noEnchant;
+				saveState();
+				renderNoEnchantToggle();
+			});
+
 			els.addCurrentAffix.addEventListener("click", () => {
 				if (appState.current.affixes.length >= 4) {
 					return;
@@ -1820,6 +1838,8 @@ permalink: /d4cubeoptim/
 			});
 
 			els.applyManual.addEventListener("click", () => { applyManualOutcome(); startRun(); });
+			els.applyManualOnly.addEventListener("click", () => { applyManualOutcomeOnly(); });
+			els.applySecondaryAction.addEventListener("click", () => { applySecondaryAction(); });
 		}
 
 		function ensureWorker() {
@@ -1921,6 +1941,7 @@ permalink: /d4cubeoptim/
 						.map((entry) => entry.affixId),
 					sacrificeAffixId: "",
 					strictMode: true,
+					disableEnchanting: !!appState.settings.noEnchant,
 				},
 				timeMs,
 				stopBuffer,
@@ -2247,6 +2268,14 @@ permalink: /d4cubeoptim/
 
 		function renderCandidates(diagnostics) {
 			els.candidateList.innerHTML = "";
+			// Update the secondary-action button regardless of early-return path.
+			const secondary = diagnostics && Array.isArray(diagnostics.candidateActions)
+				&& diagnostics.candidateActions.length >= 2
+				? diagnostics.candidateActions[1] : null;
+			els.applySecondaryAction.disabled = !secondary;
+			els.secondaryActionLabel.textContent = secondary
+				? describeAction(secondary.action) : "";
+
 			if (!diagnostics || !Array.isArray(diagnostics.candidateActions) || diagnostics.candidateActions.length === 0) {
 				const li = document.createElement("li");
 				li.textContent = emptyCandidateMessage(diagnostics);
@@ -2307,6 +2336,7 @@ permalink: /d4cubeoptim/
 			els.runBtn.disabled = runInProgress;
 			els.stopBtn.disabled = !runInProgress;
 			els.applyManual.disabled = runInProgress;
+			els.applyManualOnly.disabled = runInProgress;
 		}
 
 		function renderStatus(text, className) {
@@ -2809,6 +2839,7 @@ permalink: /d4cubeoptim/
 
 			els.legendaryToggle.classList.toggle("active", appState.current.isLegendary);
 			els.legendaryToggle.textContent = appState.current.isLegendary ? "Legendary: Yes" : "Legendary: No";
+			renderNoEnchantToggle();
 		}
 
 		function copyCurrentAffixesToTarget() {
@@ -3380,6 +3411,51 @@ permalink: /d4cubeoptim/
 			renderAll();
 		}
 
+		// Like applyManualOutcome + startRun, but skips the optimizer and keeps
+		// mode/prism/result so the user can record a batch of similar outcomes
+		// quickly (e.g. many Focused/Aggressive results in a row for training data).
+		// sourceIndex is cleared because the item state changed; mode, prism, and
+		// resultAffixId are preserved.
+		function applyManualOutcomeOnly() {
+			const modeBefore = els.manualMode.value;
+			const prismBefore = els.manualPrism.value;
+			const resultIdBefore = appState.lastAction.resultAffixId;
+
+			applyManualOutcome();
+
+			// applyManualOutcome clears resultAffixId — restore mode/prism/result.
+			appState.lastAction.mode = modeBefore;
+			appState.lastAction.prism = prismBefore;
+			appState.lastAction.resultAffixId = resultIdBefore;
+
+			saveState();
+			renderManualControls();
+		}
+
+		// Pre-fills the Apply Last Outcome controls with the secondary candidate
+		// action (index 1 in candidateActions from the last optimization run), as
+		// if the optimizer had recommended that action. The user can then adjust
+		// the result and click either Apply button.
+		function applySecondaryAction() {
+			if (!lastDiagnostics || !Array.isArray(lastDiagnostics.candidateActions)
+					|| lastDiagnostics.candidateActions.length < 2) {
+				return;
+			}
+			const secondary = lastDiagnostics.candidateActions[1];
+			if (!secondary || !secondary.action) {
+				return;
+			}
+			applySuggestedActionDefaults(secondary.action);
+			saveState();
+			renderManualControls();
+		}
+
+		function renderNoEnchantToggle() {
+			const on = !!appState.settings.noEnchant;
+			els.noEnchantToggle.classList.toggle("active", on);
+			els.noEnchantToggle.textContent = on ? "No Enchant: On" : "No Enchant: Off";
+		}
+
 		function addHistoryEntry(entry) {
 			const stamp = new Date().toISOString();
 			appState.history = Array.isArray(appState.history) ? appState.history : [];
@@ -3519,6 +3595,7 @@ permalink: /d4cubeoptim/
 			pendingIllegalFlashTarget.clear();
 
 			appState.settings.thinkingSeconds = clampInt(appState.settings.thinkingSeconds, 0, 86400, 0);
+			appState.settings.noEnchant = !!appState.settings.noEnchant;
 
 			// Migrate the legacy combined "changed" mode to the Focused split.
 			if (appState.lastAction.mode === "changed") {
