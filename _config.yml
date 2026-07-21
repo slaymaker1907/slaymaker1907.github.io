@@ -17,3 +17,16 @@ github_username:  slaymaker1907
 
 # Build settings
 markdown: kramdown
+
+# Keep Claude Code guidance out of the published site. GitHub Pages runs
+# Jekyll 3, where setting `exclude` replaces the built-in defaults, so the
+# defaults (Gemfile, node_modules, vendor) are restated here.
+exclude:
+  - for_claude/
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor/bundle/
+  - vendor/cache/
+  - vendor/gems/
+  - vendor/ruby/
