@@ -22,6 +22,7 @@ markdown: kramdown
 # Jekyll 3, where setting `exclude` replaces the built-in defaults, so the
 # defaults (Gemfile, node_modules, vendor) are restated here.
 exclude:
+  - CLAUDE.md
   - for_claude/
   - Gemfile
   - Gemfile.lock
