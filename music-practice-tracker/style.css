@@ -1,0 +1,372 @@
+/* ============================================================
+   Music Practice Tracker — styles
+   Dependency-free. Light + dark via prefers-color-scheme.
+   ============================================================ */
+
+/* ---- Theme tokens ---------------------------------------- */
+:root {
+  --bg:            #f2f4f8;
+  --surface:       #ffffff;
+  --surface-alt:   #f0f2f6;
+  --text:          #1c2430;
+  --text-muted:    #5c6675;
+  --border:        #d5dae2;
+  --border-strong: #b9c1cd;
+
+  --primary:       #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-text:  #ffffff;
+
+  --focus-ring:    #4f46e5;
+  --shadow:        0 1px 2px rgba(20, 30, 50, .06),
+                   0 6px 20px rgba(20, 30, 50, .08);
+
+  --radius:        10px;
+  --radius-sm:     7px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:            #14151b;
+    --surface:       #1d1f28;
+    --surface-alt:   #262935;
+    --text:          #e7eaf0;
+    --text-muted:    #9aa4b4;
+    --border:        #333747;
+    --border-strong: #454a5d;
+
+    --primary:       #6366f1;
+    --primary-hover: #7c7ff5;
+    --primary-text:  #ffffff;
+
+    --focus-ring:    #818cf8;
+    --shadow:        0 1px 2px rgba(0, 0, 0, .3),
+                     0 6px 22px rgba(0, 0, 0, .4);
+  }
+}
+
+/* ---- Base ------------------------------------------------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 1.5rem 1rem 4rem;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  /* Never let the page scroll sideways on mobile. */
+  overflow-x: hidden;
+}
+
+.app {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* ---- Header ----------------------------------------------- */
+.app-header { margin-bottom: 1.5rem; }
+
+h1 {
+  margin: 0 0 .25rem;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: .95rem;
+}
+
+/* ---- Form ------------------------------------------------- */
+.practice-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* Smart inputs wrap to one column on narrow screens. */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: .35rem;
+  min-width: 0; /* allow inputs to shrink instead of overflowing */
+}
+
+label {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+input[type="text"],
+input[type="number"],
+textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: .55rem .65rem;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+
+input::placeholder,
+textarea::placeholder { color: var(--text-muted); opacity: .8; }
+
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 30%, transparent);
+}
+
+/* Exercise Number Range group */
+.range-group {
+  margin: 0;
+  padding: .9rem 1rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+}
+
+.range-group legend {
+  padding: 0 .4rem;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.range-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.range-fields .field { flex: 1 1 130px; }
+
+/* ---- Buttons ---------------------------------------------- */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+
+.btn {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: .6rem 1.1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition: background-color .12s ease, border-color .12s ease,
+              color .12s ease, transform .04s ease;
+}
+
+.btn:active { transform: translateY(1px); }
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 40%, transparent);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+.btn-primary:hover { background: var(--primary-hover); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.btn-secondary:hover { background: var(--surface-alt); }
+
+/* ---- Progress + results ----------------------------------- */
+.results { margin-top: 1.5rem; }
+
+.progress-counter {
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: .75rem;
+  min-height: 1.25em; /* reserve space so layout doesn't jump when filled */
+}
+.progress-counter:empty { margin-bottom: 0; }
+
+.exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+/* ============================================================
+   Exercise rows — built at runtime by app.js (NOT in the HTML).
+   For each exercise app.js creates:
+
+     <div class="exercise-row">
+       <input type="checkbox" class="ex-check">          completion toggle
+       <span class="ex-name"></span>                     e.g. "Exercise 12"
+       <input type="text" class="ex-oneline" readonly>   1-line comment preview
+       <button type="button" class="ex-details">Details</button>
+     </div>
+
+   app.js toggles the `.completed` modifier class on `.exercise-row`
+   to strike through + dim the name. The readonly `.ex-oneline` is a
+   click target that opens the details modal.
+   ============================================================ */
+.exercise-row {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  padding: .55rem .7rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+}
+
+.ex-check {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.ex-name {
+  flex: 0 0 auto;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Read-only comment preview: grows to fill, looks non-editable,
+   but is clickable (opens the modal) so it gets a pointer cursor. */
+.ex-oneline {
+  flex: 1 1 auto;
+  min-width: 0;               /* lets it shrink so the row never overflows */
+  text-overflow: ellipsis;
+}
+.ex-oneline[readonly] {
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.ex-oneline[readonly]:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ex-oneline[readonly]:empty::before,
+.ex-oneline[readonly][value=""] { font-style: italic; }
+
+.ex-details {
+  flex: 0 0 auto;
+  font: inherit;
+  font-weight: 600;
+  font-size: .9rem;
+  cursor: pointer;
+  padding: .4rem .75rem;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition: background-color .12s ease;
+}
+.ex-details:hover { background: var(--surface-alt); }
+.ex-details:focus-visible,
+.ex-check:focus-visible,
+.ex-oneline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 40%, transparent);
+}
+
+/* Completed state: strike through + dim the exercise name. */
+.exercise-row.completed .ex-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
+  opacity: .7;
+}
+.exercise-row.completed { background: var(--surface-alt); }
+
+/* ---- Details modal (native <dialog>) ---------------------- */
+.details-modal {
+  width: min(92vw, 560px);
+  max-height: 90vh;
+  padding: 1.5rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .35);
+}
+
+.details-modal::backdrop {
+  background: rgba(15, 20, 30, .55);
+  backdrop-filter: blur(2px);
+}
+
+#modal-title {
+  margin: 0 0 1rem;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.modal-completed {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+.modal-completed #modal-check {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.modal-comment-label { display: block; margin-bottom: .35rem; }
+
+#modal-comment {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: .75rem;
+  margin-top: 1.25rem;
+}
+
+/* ---- Motion preference ------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

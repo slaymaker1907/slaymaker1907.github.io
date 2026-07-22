@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Music Practice Tracker</title>
+  <meta name="description" content="Randomize and track musical practice exercises.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f7f8fa" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14151b" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="./style.css">
+  <!-- app.js is an ES module and pulls in its data layer itself; only this one script tag is needed. -->
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Music Practice Tracker</h1>
+      <p class="tagline">Pick your book and a range, then shuffle up something to practice.</p>
+    </header>
+
+    <!-- Header form. There is no submit control and every action button opts out of
+         submitting, so this never navigates; app.js still attaches a submit handler
+         and calls preventDefault() to be safe against Enter-to-submit. -->
+    <form id="practice-form" class="practice-form" novalidate>
+      <div class="form-grid">
+        <div class="field">
+          <label for="instrument">Instrument</label>
+          <input type="text" id="instrument" name="instrument"
+                 list="instrument-list" autocomplete="off"
+                 placeholder="e.g. Violin">
+          <datalist id="instrument-list"></datalist>
+        </div>
+
+        <div class="field">
+          <label for="book">Book</label>
+          <input type="text" id="book" name="book"
+                 list="book-list" autocomplete="off"
+                 placeholder="e.g. Suzuki Book 1">
+          <datalist id="book-list"></datalist>
+        </div>
+
+        <div class="field">
+          <label for="chapter">Chapter</label>
+          <input type="text" id="chapter" name="chapter"
+                 list="chapter-list" autocomplete="off"
+                 placeholder="e.g. Chapter 3">
+          <datalist id="chapter-list"></datalist>
+        </div>
+      </div>
+
+      <fieldset class="range-group">
+        <legend>Exercise Number Range</legend>
+        <div class="range-fields">
+          <div class="field">
+            <label for="min">Min</label>
+            <input type="number" id="min" name="min"
+                   min="1" step="1" inputmode="numeric" placeholder="1">
+          </div>
+          <div class="field">
+            <label for="max">Max</label>
+            <input type="number" id="max" name="max"
+                   min="1" step="1" inputmode="numeric" placeholder="12">
+          </div>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button type="button" id="randomize-btn" class="btn btn-primary">Randomize</button>
+        <button type="button" id="clear-btn" class="btn btn-secondary">Clear Form</button>
+      </div>
+    </form>
+
+    <section class="results" aria-live="polite">
+      <div id="progress-counter" class="progress-counter"></div>
+      <!-- app.js injects .exercise-row children here at runtime. -->
+      <div id="exercise-list" class="exercise-list"></div>
+    </section>
+  </main>
+
+  <!-- Details modal (native dialog; opened with showModal() by app.js). -->
+  <dialog id="details-modal" class="details-modal" aria-labelledby="modal-title">
+    <h2 id="modal-title"></h2>
+
+    <label class="modal-completed">
+      <input type="checkbox" id="modal-check"> Completed
+    </label>
+
+    <label for="modal-comment" class="modal-comment-label">Comment</label>
+    <textarea id="modal-comment" rows="8"
+              placeholder="Notes, tempo, problem spots&hellip;"></textarea>
+
+    <div class="modal-actions">
+      <button type="button" id="modal-save" class="btn btn-primary">Save</button>
+      <button type="button" id="modal-cancel" class="btn btn-secondary">Cancel</button>
+    </div>
+  </dialog>
+</body>
+</html>
