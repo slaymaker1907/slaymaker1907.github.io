@@ -2,8 +2,8 @@
 
 Longer-form reference documentation for this repository — the design notes and
 per-app details that are too detailed for the top-level `README.md` or `CLAUDE.md`.
-(Deep docs for `d4cubeoptim/` are the exception: they live in
-`for_claude/d4cubeoptim.md`.)
+(Agent-facing "before you edit" docs for the actively-developed apps live in
+`for_claude/`: `for_claude/d4cubeoptim.md` and `for_claude/music-practice-tracker.md`.)
 
 ## Pages
 

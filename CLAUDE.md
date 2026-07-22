@@ -11,7 +11,7 @@ Personal GitHub Pages site (https://slaymaker1907.github.io) published automatic
 
 Nearly all recent development happens in `d4cubeoptim/`. **Before touching anything in that directory, read `for_claude/d4cubeoptim.md`** — it documents the architecture, the sync relationship with its separate source repository, and versioning conventions that must be followed when deploying changes there.
 
-`music-practice-tracker/` is another recent, dependency-free browser SPA (plain ES modules, IndexedDB-backed) authored directly in this repo — read `wiki/music-practice-tracker.md` before changing it.
+`music-practice-tracker/` is another recent, dependency-free browser SPA (plain ES modules, IndexedDB-backed) authored directly in this repo. **Before touching that directory, read `for_claude/music-practice-tracker.md`** — it captures the data-model and concurrency invariants that must be preserved.
 
 Other directories, for orientation: `dice-roller/`, `password/`, `optimal-timer/` contain only prebuilt bundles (webpack/CRA output) whose sources live outside this repo — never hand-edit their `bundle.js`; `mother/` is a small Tone.js app; `augus818/` plus root `ability_score.html` and `weapon818.html` are D&D pages (the root pages use the shared vendored libraries in `assets/`: Bootstrap 3.3.6, jQuery 2.2.4, crypto-js); `camera-inverter/`, `dice-counter/`, `old-password/`, `tiddlywiki/` are single-page utilities.
 
@@ -22,7 +22,7 @@ Longer-form reference docs live in `wiki/`:
 - `wiki/README.md` — index of the wiki.
 - `wiki/music-practice-tracker.md` — data model, IndexedDB/GUID rules, concurrency, and UI flow for the music-practice-tracker app.
 
-Deep docs for `d4cubeoptim/` still live in `for_claude/d4cubeoptim.md` (read it before touching that directory).
+Agent-facing deep docs for the actively-developed apps live in `for_claude/` — `for_claude/d4cubeoptim.md` and `for_claude/music-practice-tracker.md`. Read the relevant one before touching that directory.
 
 ## Commands
 
