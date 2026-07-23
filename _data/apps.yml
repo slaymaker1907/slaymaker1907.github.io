@@ -39,9 +39,6 @@
     - title: 5e Attribute Calculator
       url: /ability_score.html
       description: Point-buy and attribute calculator for D&D 5e.
-    - title: Malacath One-Shots
-      url: /augus818/
-      description: U of U D&D one-shot campaign pages.
 - name: Reference
   apps:
     - title: TiddlyWiki Plugin Library
