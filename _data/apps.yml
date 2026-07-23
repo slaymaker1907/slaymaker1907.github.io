@@ -1,0 +1,49 @@
+# App catalog for the homepage gallery (see index.html).
+# Ordered list of categories, each with an ordered list of apps.
+# Adding a new app is a one-entry edit here — no markup changes needed.
+- name: Games & Dice
+  apps:
+    - title: D4 Horadric Cube Optimizer
+      url: /d4cubeoptim/
+      description: Optimize Diablo IV Horadric Cube affix rerolls.
+    - title: Dice Roller
+      url: /dice-roller/
+      description: Roll dice in the browser (installable PWA).
+    - title: Dice Counter
+      url: /dice-counter/
+      description: Tally dice results quickly.
+- name: Music
+  apps:
+    - title: Music Practice Tracker
+      url: /music-practice-tracker/
+      description: Randomize and track musical practice exercises.
+    - title: Web Organ
+      url: /mother/
+      description: Play tones with your keyboard (Tone.js).
+- name: Utilities
+  apps:
+    - title: Password Generator
+      url: /password/
+      description: Generate memorable passphrases locally.
+    - title: Timer Helper
+      url: /optimal-timer/
+      description: Interval and stopwatch timing helper.
+    - title: Camera Inverter
+      url: /camera-inverter/
+      description: Live color-inverted view from your camera.
+    - title: Password (legacy)
+      url: /old-password/
+      description: Older Bootstrap-based password tool.
+- name: D&D
+  apps:
+    - title: 5e Attribute Calculator
+      url: /ability_score.html
+      description: Point-buy and attribute calculator for D&D 5e.
+    - title: Malacath One-Shots
+      url: /augus818/
+      description: U of U D&D one-shot campaign pages.
+- name: Reference
+  apps:
+    - title: TiddlyWiki Plugin Library
+      url: /tiddlywiki/plugin-library.html
+      description: Hosted TiddlyWiki plugin library.

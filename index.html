@@ -1,23 +1,23 @@
 ---
-title: Dyllon's Home Page
+title: Apps
 layout: default
 ---
-<div class="home">
+<div class="app-listing">
 
-  <h1 class="page-heading">Posts</h1>
+  <h1 class="page-heading">Apps</h1>
 
-  <ul class="post-list">
-    {% for post in site.posts %}
-      <li>
-        <span class="post-meta">{{ post.date | date: "%b %-d, %Y" }}</span>
-
-        <h2>
-          <a class="post-link" href="{{ post.url | prepend: site.baseurl }}">{{ post.title }}</a>
-        </h2>
-      </li>
-    {% endfor %}
-  </ul>
-
-  <p class="rss-subscribe">subscribe <a href="{{ "/feed.xml" | prepend: site.baseurl }}">via RSS</a></p>
+  {% for category in site.data.apps %}
+    <section class="app-category">
+      <h2 class="app-category-title">{{ category.name }}</h2>
+      <div class="app-grid">
+        {% for app in category.apps %}
+          <a class="app-card" href="{{ app.url | prepend: site.baseurl }}">
+            <h3>{{ app.title }}</h3>
+            <p>{{ app.description }}</p>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
 
 </div>
