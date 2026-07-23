@@ -1,0 +1,50 @@
+/**
+ * App listing (homepage gallery)
+ */
+.app-category {
+    margin-bottom: $spacing-unit;
+}
+
+.app-category-title {
+    font-size: 22px;
+    border-bottom: 1px solid $grey-color-light;
+    padding-bottom: 4px;
+    margin-bottom: $spacing-unit / 2;
+}
+
+.app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 15px;
+}
+
+.app-card {
+    display: block;
+    border: 1px solid $grey-color-light;
+    border-radius: 6px;
+    padding: 15px;
+    color: $text-color;
+    transition: border-color .15s, box-shadow .15s;
+
+    &:visited {
+        color: $text-color;
+    }
+
+    &:hover {
+        text-decoration: none;
+        border-color: $brand-color;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+    }
+
+    h3 {
+        font-size: 18px;
+        color: $brand-color;
+        margin-bottom: 6px;
+    }
+
+    p {
+        font-size: $small-font-size;
+        color: $grey-color;
+        margin-bottom: 0;
+    }
+}

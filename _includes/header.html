@@ -14,13 +14,9 @@
       </a>
 
       <div class="trigger">
-        {% for my_page in site.pages %}
-          {% if my_page.title %}
-          <a class="page-link" href="{{ my_page.url | prepend: site.baseurl }}">{{ my_page.title }}</a>
-          {% endif %}
-        {% endfor %}
-          <a class="page-link" href="{{ '/optimal-timer/' | prepend: site.baseurl }}">Timer Helper</a>
-          <a class="page-link" href="{{ '/tiddlywiki/plugin-library.html' | prepend: site.baseurl }}">Tiddlywiki Plugins</a>
+        <a class="page-link" href="{{ site.baseurl }}/">Apps</a>
+        <a class="page-link" href="{{ '/blog/' | prepend: site.baseurl }}">Blog</a>
+        <a class="page-link" href="{{ '/about/' | prepend: site.baseurl }}">About</a>
       </div>
     </nav>
 
