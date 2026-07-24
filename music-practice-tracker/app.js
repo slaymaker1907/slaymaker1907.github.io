@@ -15,6 +15,7 @@ import {
   listChapters,
   VersionConflictError,
   mutateChapter,
+  deleteChapter,
 } from "./db.js";
 
 /* ------------------------------------------------------------------ *
@@ -30,6 +31,7 @@ const minInput = document.getElementById("min");
 const maxInput = document.getElementById("max");
 const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
+const deleteBtn = document.getElementById("delete-btn");
 const progressCounter = document.getElementById("progress-counter");
 const exerciseList = document.getElementById("exercise-list");
 
@@ -288,14 +290,30 @@ function buildRow(name) {
   const oneline = document.createElement("input");
   oneline.type = "text";
   oneline.className = "ex-oneline";
-  oneline.readOnly = true;
+  const multiline = (ex.comment || "").includes("\n");
+  oneline.readOnly = multiline;
   oneline.value = firstLine(ex.comment);
-  oneline.addEventListener("click", () => openModal(name));
+  // Locked (multi-line) rows open the modal on click; unlocked rows are
+  // directly editable, so a click just focuses the box like any text input.
+  oneline.addEventListener("click", () => {
+    if (oneline.readOnly) openModal(name);
+  });
+  // Direct single-line editing, bypassing the modal entirely. An <input
+  // type="text"> can't hold newlines, so this can never produce multi-line
+  // content; the replace() is a defensive no-op against odd paste behavior.
+  oneline.addEventListener("input", () => {
+    if (oneline.readOnly || !currentDoc) return;
+    ensureExerciseCurrent(name);
+    const value = oneline.value.replace(/\r?\n/g, " ");
+    if (value !== oneline.value) oneline.value = value;
+    currentDoc.exercises[name].comment = value;
+    scheduleCommentPersist(name);
+  });
 
   const details = document.createElement("button");
   details.type = "button";
   details.className = "ex-details";
-  details.textContent = "Details";
+  details.textContent = "Edit";
   details.addEventListener("click", () => openModal(name));
 
   row.append(check, nameSpan, oneline, details);
@@ -331,8 +349,10 @@ function refreshRowPreview(name) {
   const row = findRow(name);
   if (!row) return;
   const oneline = row.querySelector(".ex-oneline");
-  const ex = currentDoc && currentDoc.exercises[name];
-  if (oneline) oneline.value = firstLine(ex ? ex.comment : "");
+  if (!oneline) return;
+  const comment = (currentDoc && currentDoc.exercises[name] && currentDoc.exercises[name].comment) || "";
+  oneline.readOnly = comment.includes("\n");
+  oneline.value = firstLine(comment);
 }
 
 /* ------------------------------------------------------------------ *
@@ -430,6 +450,11 @@ async function onRandomize() {
     return;
   }
 
+  const confirmed = window.confirm(
+    "Randomizing will reset every exercise's completed checkbox for this chapter, and drop any exercises outside the new range. Comments for exercises staying in range are kept. Continue?"
+  );
+  if (!confirmed) return;
+
   // Randomize settles any pending inactivity timer and bumps last_used_at now.
   cancelLastUsedTimer();
 
@@ -440,12 +465,20 @@ async function onRandomize() {
   try {
     await occ(key, (doc) => {
       doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
-      // Never overwrite existing entries -> completion/comments survive reshuffles.
+      // A chapter has exactly one active range: rebuild `exercises` from
+      // scratch for the new range only, dropping anything outside it.
+      // Completed state always resets; comments carry over for exercise
+      // names that were already present (i.e. overlap the old range).
+      const newExercises = {};
       for (const nm of names) {
-        if (!doc.exercises[nm]) {
-          doc.exercises[nm] = { completed: false, completed_at: null, comment: "" };
-        }
+        const prev = doc.exercises[nm];
+        newExercises[nm] = {
+          completed: false,
+          completed_at: null,
+          comment: prev ? prev.comment || "" : "",
+        };
       }
+      doc.exercises = newExercises;
       doc.last_range = { min, max };
       doc.randomization = shuffle(names);
       doc.randomized_at = Date.now();
@@ -459,6 +492,50 @@ async function onRandomize() {
     console.error("Randomize failed", err);
     showError("Could not save the randomization. Please try again.");
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Delete — removes the whole saved chapter document. Destructive and
+ * confirmed; resets the form afterward like Reset Form.
+ * ------------------------------------------------------------------ */
+async function onDeleteChapter() {
+  const triple = readTriple();
+  if (!triple) {
+    showError("Please fill in instrument, book, and chapter.");
+    return;
+  }
+  if (!currentDoc || !tripleEq(currentDoc, triple)) {
+    showError("No saved entry for this chapter to delete.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Delete the saved entry for ${triple.instrument} / ${triple.book} / ${triple.chapter}? This cannot be undone.`
+  );
+  if (!confirmed) return;
+
+  cancelLastUsedTimer();
+  cancelCommentThrottle();
+
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  try {
+    await deleteChapter(key);
+  } catch (err) {
+    console.error("Delete failed", err);
+    showError("Could not delete this chapter. Please try again.");
+    return;
+  }
+
+  instrumentInput.value = "";
+  bookInput.value = "";
+  chapterInput.value = "";
+  minInput.value = "";
+  maxInput.value = "";
+  currentDoc = null;
+  clearExerciseList();
+  clearCounter();
+  rebuildDatalistDom();
+  refreshDatalists();
 }
 
 /* ------------------------------------------------------------------ *
@@ -648,7 +725,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Clear Form — UI-ONLY reset, deletes nothing.
+ * Reset Form — UI-ONLY reset, deletes nothing.
  * ------------------------------------------------------------------ */
 function onClearForm() {
   cancelLastUsedTimer();
@@ -687,6 +764,7 @@ function wireEvents() {
   }
   randomizeBtn.addEventListener("click", onRandomize);
   clearBtn.addEventListener("click", onClearForm);
+  deleteBtn.addEventListener("click", onDeleteChapter);
 }
 
 /* ------------------------------------------------------------------ *

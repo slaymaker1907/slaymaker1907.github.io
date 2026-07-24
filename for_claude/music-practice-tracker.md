@@ -27,19 +27,19 @@ Four files, plain ES modules, no framework:
 
 6. **Recency timing.** `last_used_at` is bumped 60s after a *top-level* field change (instrument/book/chapter/min/max) or immediately on Randomize; comment and checkbox edits must never bump it. `use_count` bumps only on Randomize.
 
-7. **Randomize preserves progress.** It creates only *missing* `exercises` entries for the range, so completions/comments survive a reshuffle. Exercise identity is the string `exercise_name` (the map key doubles as the display label and supports future non-numeric names with no migration).
+7. **A chapter has exactly one active range.** Randomize confirms (via `window.confirm`) before mutating, then rebuilds `exercises` from scratch to contain only the new min/max range's names — anything outside the new range is dropped entirely, comment included. `completed`/`completed_at` are always reset to `false`/`null` on every Randomize, chapter-wide; `comment` carries over only for exercise names present in both the old and new range. Exercise identity is the string `exercise_name` (the map key doubles as the display label and supports future non-numeric names with no migration).
 
-8. **Clear Form is a UI-only reset** — it clears inputs and the visible list and deletes nothing; re-entering the triple autoloads the saved document back.
+8. **Reset Form (button id `clear-btn`) is a UI-only reset** — it clears inputs and the visible list and deletes nothing; re-entering the triple autoloads the saved document back. **Delete** (`#delete-btn`) is the destructive counterpart — after a `window.confirm`, it permanently removes the chapter document via `deleteChapter(key)` in `db.js`, which intentionally bypasses `mutateChapter`'s OCC check (delete removes whatever is stored regardless of version), then resets the form the same way.
 
 9. Triple values are **trimmed** before they key/persist a document, so `"Piano "` and `"Piano"` collapse to one record. Keep keying consistent with this.
 
 ## DOM contract (keep `index.html` and `app.js` in sync)
 
-Inputs `#instrument #book #chapter` (+ datalists `#instrument-list #book-list #chapter-list`), `#min #max`, buttons `#randomize-btn #clear-btn`, `#progress-counter`, `#exercise-list`, and the modal `#details-modal` with `#modal-title #modal-check #modal-comment #modal-save #modal-cancel`. Rows are built in `app.js` as `.exercise-row` (+ `.completed`) containing `.ex-check`, `.ex-name`, readonly `.ex-oneline` (first line of the comment; click opens the modal), and `.ex-details`. Change an id/class in one file and you must change it in both.
+Inputs `#instrument #book #chapter` (+ datalists `#instrument-list #book-list #chapter-list`), `#min #max`, buttons `#randomize-btn #clear-btn #delete-btn`, `#progress-counter`, `#exercise-list`, and the modal `#details-modal` with `#modal-title #modal-check #modal-comment #modal-save #modal-cancel`. Rows are built in `app.js` as `.exercise-row` (+ `.completed`) containing `.ex-check`, `.ex-name`, `.ex-oneline`, and `.ex-details` (labeled "Edit"). `.ex-oneline` is directly editable (typed edits go through the same 250ms throttle as the modal) whenever the comment is single-line or empty; it becomes `[readonly]` once the comment has a second line, and clicking it while locked (or clicking `.ex-details` regardless of lock state) opens the modal. Change an id/class in one file and you must change it in both.
 
 ## Testing
 
-No repo test runner. Serve locally and check the full flow by hand or with a headless-Chromium script: Randomize a range → tick some checkboxes → add a multi-line comment in the modal → reload and confirm everything persisted → open a second tab on the same chapter and confirm concurrent edits both survive (the OCC path). Inspect Application → IndexedDB in DevTools to confirm there is exactly one `chapters` store and that `version` advances on writes.
+No repo test runner. Serve locally and check the full flow by hand or with a headless-Chromium script: Randomize a range → tick some checkboxes → add a multi-line comment in the modal → reload and confirm everything persisted → open a second tab on the same chapter and confirm concurrent edits both survive (the OCC path). Also check: typing directly into a row's one-line box persists without opening the modal; a comment that gains a second line in the modal locks the row box on save; re-randomizing an overlapping range clears all checkboxes chapter-wide, drops exercises outside the new range, and keeps comments for exercise names still in range; Delete removes the IndexedDB record and clears the form. Inspect Application → IndexedDB in DevTools to confirm there is exactly one `chapters` store and that `version` advances on writes.
 
 ## Deploy
 

@@ -131,6 +131,17 @@ export async function listChapters() {
   return requestToPromise(store.getAll());
 }
 
+// --- delete -------------------------------------------------------------
+
+// User-initiated, destructive removal of an entire chapter document.
+// Deliberately bypasses mutateChapter's OCC version check: deleting means
+// "get rid of this regardless of version," not a conditional field update.
+export async function deleteChapter(key) {
+  const db = await openDb();
+  const store = db.transaction(STORE, "readwrite").objectStore(STORE);
+  return requestToPromise(store.delete(key));
+}
+
 // --- optimistic-concurrency write ------------------------------------------
 
 export class VersionConflictError extends Error {
