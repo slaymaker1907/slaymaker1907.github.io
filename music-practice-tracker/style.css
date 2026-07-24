@@ -17,6 +17,9 @@
   --primary-hover: #4338ca;
   --primary-text:  #ffffff;
 
+  --danger:        #dc2626;
+  --danger-hover:  #b91c1c;
+
   --focus-ring:    #4f46e5;
   --shadow:        0 1px 2px rgba(20, 30, 50, .06),
                    0 6px 20px rgba(20, 30, 50, .08);
@@ -38,6 +41,9 @@
     --primary:       #6366f1;
     --primary-hover: #7c7ff5;
     --primary-text:  #ffffff;
+
+    --danger:        #f87171;
+    --danger-hover:  #ef4444;
 
     --focus-ring:    #818cf8;
     --shadow:        0 1px 2px rgba(0, 0, 0, .3),
@@ -202,6 +208,16 @@ textarea:focus-visible {
 }
 .btn-secondary:hover { background: var(--surface-alt); }
 
+.btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.btn-danger:hover {
+  background: var(--danger);
+  color: var(--primary-text);
+}
+
 /* ---- Progress + results ----------------------------------- */
 .results { margin-top: 1.5rem; }
 
@@ -226,13 +242,16 @@ textarea:focus-visible {
      <div class="exercise-row">
        <input type="checkbox" class="ex-check">          completion toggle
        <span class="ex-name"></span>                     e.g. "Exercise 12"
-       <input type="text" class="ex-oneline" readonly>   1-line comment preview
-       <button type="button" class="ex-details">Details</button>
+       <input type="text" class="ex-oneline">            comment (see below)
+       <button type="button" class="ex-details">Edit</button>
      </div>
 
    app.js toggles the `.completed` modifier class on `.exercise-row`
-   to strike through + dim the name. The readonly `.ex-oneline` is a
-   click target that opens the details modal.
+   to strike through + dim the name. `.ex-oneline` is directly editable
+   when the comment is a single line (or empty); typing there persists via
+   the same throttle as the modal. It becomes `[readonly]` (greyed out,
+   click-to-open) once the comment has a second line, since only the
+   modal's textarea can hold multi-line text.
    ============================================================ */
 .exercise-row {
   display: flex;
@@ -259,8 +278,10 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
-/* Read-only comment preview: grows to fill, looks non-editable,
-   but is clickable (opens the modal) so it gets a pointer cursor. */
+/* Comment box: editable in place for single-line comments (normal input
+   look). When locked (multi-line comment), the [readonly] rule below makes
+   it look non-editable and clickable (opens the modal) with a pointer
+   cursor. */
 .ex-oneline {
   flex: 1 1 auto;
   min-width: 0;               /* lets it shrink so the row never overflows */

@@ -61,18 +61,31 @@ On a mismatch (another tab wrote first) it throws `VersionConflictError` carryin
 fresh doc. The controller then reloads the fresh doc, re-applies the field currently
 being edited, and retries **once** — i.e. per-field last-write-wins.
 
+`deleteChapter(key)` is the one exception: it's a plain `store.delete()`, bypassing the
+OCC check entirely, since deleting is a user-confirmed "remove regardless of version"
+action rather than a conditional field update.
+
 ## Write throttling
 
 Comment / free-text edits persist at most **once per 250ms** (trailing flush), not on
-every keystroke.
+every keystroke. This applies whether the edit comes from the modal's textarea or from
+directly typing in a row's one-line comment box.
 
 ## UI flow
 
 - **Header form** — instrument / book / chapter smart inputs plus a min/max range.
   Filling in a matching saved combo **autoloads** that record with no button press.
-- **Randomize** — saves the combo and shuffles the exercise order (also sets
-  `last_range` and bumps `last_used_at` immediately).
-- **Clear Form** — a UI-only reset; it deletes nothing.
-- **Exercise rows** — each row is a completion checkbox + a read-only one-line comment
-  preview + a **Details** button that opens a `<dialog>` with a multi-line comment
-  editor.
+- **Randomize** — confirms first (it resets progress), then saves the combo and
+  shuffles the exercise order. A chapter has exactly one active range: `exercises` is
+  rebuilt to contain only the new range's names, dropping anything outside it;
+  `completed`/`completed_at` are always reset, but `comment` carries over for exercise
+  names that were already present (i.e. overlap the old range). Also sets `last_range`
+  and bumps `last_used_at`/`use_count` immediately.
+- **Reset Form** (button id `clear-btn`) — a UI-only reset; it deletes nothing.
+- **Delete** — confirms, then permanently deletes the chapter document via
+  `deleteChapter` and resets the form like Reset Form.
+- **Exercise rows** — each row is a completion checkbox + a one-line comment box + an
+  **Edit** button. The comment box is directly editable when the comment is a single
+  line (or empty) — typed edits go through the same 250ms throttle as the modal. Once
+  a comment has a second line, the box locks (`readonly`, greyed out) and clicking it
+  (or Edit) opens the `<dialog>` multi-line comment editor instead.
