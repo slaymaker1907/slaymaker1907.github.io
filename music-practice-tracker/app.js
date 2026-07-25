@@ -24,6 +24,9 @@ import {
 const instrumentInput = document.getElementById("instrument");
 const bookInput = document.getElementById("book");
 const chapterInput = document.getElementById("chapter");
+const instrumentClearBtn = document.getElementById("instrument-clear");
+const bookClearBtn = document.getElementById("book-clear");
+const chapterClearBtn = document.getElementById("chapter-clear");
 const instrumentList = document.getElementById("instrument-list");
 const bookList = document.getElementById("book-list");
 const chapterList = document.getElementById("chapter-list");
@@ -406,7 +409,14 @@ async function fireLastUsedTimer() {
 async function autoload() {
   rebuildDatalistDom(); // dependent datalists always refresh (sync, from cache)
   const triple = readTriple();
-  if (!triple) return; // need all three fields to look anything up
+  if (!triple) {
+    // An incomplete triple can never match a saved doc; drop whatever the
+    // previous (now-stale) triple had on screen instead of leaving it behind.
+    currentDoc = null;
+    clearExerciseList();
+    clearCounter();
+    return;
+  }
   const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   await ensureDb();
   const doc = await getChapter(key);
@@ -744,9 +754,30 @@ function onClearForm() {
 /* ------------------------------------------------------------------ *
  * Event wiring.
  * ------------------------------------------------------------------ */
-function onTripleInput() {
+// instrument -> book -> chapter is a hierarchy: changing an ancestor field
+// invalidates whatever was typed into its descendants, so wipe them.
+function clearDescendants(level) {
+  if (level === "instrument") {
+    bookInput.value = "";
+    chapterInput.value = "";
+  } else if (level === "book") {
+    chapterInput.value = "";
+  }
+}
+
+function onFieldChanged(level) {
+  clearDescendants(level);
   restartLastUsedTimer(); // top-level field change (re)starts the 60s timer
   autoload();
+}
+
+// The × buttons blank their own field, then cascade exactly like typing would.
+function resetField(level) {
+  const input =
+    level === "instrument" ? instrumentInput : level === "book" ? bookInput : chapterInput;
+  input.value = "";
+  onFieldChanged(level);
+  input.focus();
 }
 
 function onRangeInput() {
@@ -754,10 +785,14 @@ function onRangeInput() {
 }
 
 function wireEvents() {
-  for (const el of [instrumentInput, bookInput, chapterInput]) {
-    el.addEventListener("input", onTripleInput);
-    el.addEventListener("change", onTripleInput);
+  for (const level of ["instrument", "book", "chapter"]) {
+    const el = level === "instrument" ? instrumentInput : level === "book" ? bookInput : chapterInput;
+    el.addEventListener("input", () => onFieldChanged(level));
+    el.addEventListener("change", () => onFieldChanged(level));
   }
+  instrumentClearBtn.addEventListener("click", () => resetField("instrument"));
+  bookClearBtn.addEventListener("click", () => resetField("book"));
+  chapterClearBtn.addEventListener("click", () => resetField("chapter"));
   for (const el of [minInput, maxInput]) {
     el.addEventListener("input", onRangeInput);
     el.addEventListener("change", onRangeInput);

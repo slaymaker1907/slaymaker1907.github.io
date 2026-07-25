@@ -33,9 +33,11 @@ Four files, plain ES modules, no framework:
 
 9. Triple values are **trimmed** before they key/persist a document, so `"Piano "` and `"Piano"` collapse to one record. Keep keying consistent with this.
 
+10. **instrument → book → chapter is a hierarchy.** Editing an ancestor field (typing, a datalist pick, or its `#…-clear` × button) clears every descendant field immediately — instrument clears book+chapter, book clears chapter. An incomplete triple always clears `currentDoc`, the exercise list, and the progress counter (see `autoload()`'s early-return branch) so no stale chapter is left on screen.
+
 ## DOM contract (keep `index.html` and `app.js` in sync)
 
-Inputs `#instrument #book #chapter` (+ datalists `#instrument-list #book-list #chapter-list`), `#min #max`, buttons `#randomize-btn #clear-btn #delete-btn`, `#progress-counter`, `#exercise-list`, and the modal `#details-modal` with `#modal-title #modal-check #modal-comment #modal-save #modal-cancel`. Rows are built in `app.js` as `.exercise-row` (+ `.completed`) containing `.ex-check`, `.ex-name`, `.ex-oneline`, and `.ex-details` (labeled "Edit"). `.ex-oneline` is directly editable (typed edits go through the same 250ms throttle as the modal) whenever the comment is single-line or empty; it becomes `[readonly]` once the comment has a second line, and clicking it while locked (or clicking `.ex-details` regardless of lock state) opens the modal. Change an id/class in one file and you must change it in both.
+Inputs `#instrument #book #chapter` (+ datalists `#instrument-list #book-list #chapter-list`, + per-field reset buttons `#instrument-clear #book-clear #chapter-clear`), `#min #max`, buttons `#randomize-btn #clear-btn #delete-btn`, `#progress-counter`, `#exercise-list`, and the modal `#details-modal` with `#modal-title #modal-check #modal-comment #modal-save #modal-cancel`. Rows are built in `app.js` as `.exercise-row` (+ `.completed`) containing `.ex-check`, `.ex-name`, `.ex-oneline`, and `.ex-details` (labeled "Edit"). `.ex-oneline` is directly editable (typed edits go through the same 250ms throttle as the modal) whenever the comment is single-line or empty; it becomes `[readonly]` once the comment has a second line, and clicking it while locked (or clicking `.ex-details` regardless of lock state) opens the modal. Change an id/class in one file and you must change it in both.
 
 ## Testing
 

@@ -75,6 +75,9 @@ directly typing in a row's one-line comment box.
 
 - **Header form** — instrument / book / chapter smart inputs plus a min/max range.
   Filling in a matching saved combo **autoloads** that record with no button press.
+  The three fields form a hierarchy: editing (or ×-clearing) instrument wipes book and
+  chapter, and editing book wipes chapter, so a stale descendant value can never
+  linger after its ancestor changes.
 - **Randomize** — confirms first (it resets progress), then saves the combo and
   shuffles the exercise order. A chapter has exactly one active range: `exercises` is
   rebuilt to contain only the new range's names, dropping anything outside it;

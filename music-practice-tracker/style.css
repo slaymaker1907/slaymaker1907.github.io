@@ -146,6 +146,42 @@ textarea:focus-visible {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 30%, transparent);
 }
 
+/* Smart-input clear (×) button: sits inside the field, right-aligned. */
+.input-clear-wrap {
+  position: relative;
+  display: flex;
+}
+
+.input-clear-wrap input { padding-right: 2rem; }
+
+.field-clear {
+  position: absolute;
+  top: 50%;
+  right: .3rem;
+  transform: translateY(-50%);
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background-color .12s ease, color .12s ease;
+}
+.field-clear:hover { background: var(--surface-alt); color: var(--text); }
+.field-clear:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 40%, transparent);
+}
+/* Hide the × when its input has no value (placeholder showing = empty). */
+.input-clear-wrap input:placeholder-shown ~ .field-clear { visibility: hidden; }
+
 /* Exercise Number Range group */
 .range-group {
   margin: 0;
