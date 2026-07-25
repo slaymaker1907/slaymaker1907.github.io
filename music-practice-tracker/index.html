@@ -26,25 +26,37 @@
       <div class="form-grid">
         <div class="field">
           <label for="instrument">Instrument</label>
-          <input type="text" id="instrument" name="instrument"
-                 list="instrument-list" autocomplete="off"
-                 placeholder="e.g. Violin">
+          <div class="input-clear-wrap">
+            <input type="text" id="instrument" name="instrument"
+                   list="instrument-list" autocomplete="off"
+                   placeholder="e.g. Violin">
+            <button type="button" class="field-clear" id="instrument-clear"
+                    aria-label="Clear instrument">&times;</button>
+          </div>
           <datalist id="instrument-list"></datalist>
         </div>
 
         <div class="field">
           <label for="book">Book</label>
-          <input type="text" id="book" name="book"
-                 list="book-list" autocomplete="off"
-                 placeholder="e.g. Suzuki Book 1">
+          <div class="input-clear-wrap">
+            <input type="text" id="book" name="book"
+                   list="book-list" autocomplete="off"
+                   placeholder="e.g. Suzuki Book 1">
+            <button type="button" class="field-clear" id="book-clear"
+                    aria-label="Clear book">&times;</button>
+          </div>
           <datalist id="book-list"></datalist>
         </div>
 
         <div class="field">
           <label for="chapter">Chapter</label>
-          <input type="text" id="chapter" name="chapter"
-                 list="chapter-list" autocomplete="off"
-                 placeholder="e.g. Chapter 3">
+          <div class="input-clear-wrap">
+            <input type="text" id="chapter" name="chapter"
+                   list="chapter-list" autocomplete="off"
+                   placeholder="e.g. Chapter 3">
+            <button type="button" class="field-clear" id="chapter-clear"
+                    aria-label="Clear chapter">&times;</button>
+          </div>
           <datalist id="chapter-list"></datalist>
         </div>
       </div>
