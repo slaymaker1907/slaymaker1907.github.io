@@ -45,9 +45,10 @@ cross-document relations — a chapter is the unit of read and write.
 | `version` | number | Optimistic-concurrency token. Every write re-reads the doc inside its transaction and compares this integer before mutating, then increments it. |
 | `use_count` | number | Number of randomizations; tiebreaker for suggestion ordering. |
 | `last_used_at` | epoch ms | Recency. Orders datalist suggestions and picks the doc to autoload on page open (this is the indexed field). Bumped 60s after a top-level field change, or immediately on Randomize. |
-| `last_range` | `{min, max}` \| null | Restores the range inputs on autoload; set on Randomize. |
+| `last_range` | `{min, max}` \| null | Restores the range inputs on autoload; set on a range-driven Randomize, and `null` for a custom list. |
 | `randomization` | string[] \| null | The single shuffled order of exercise names, mutated in place by Randomize; `null` = no active list. |
 | `randomized_at` | number \| null | When `randomization` was last set. |
+| `custom_list` | boolean | `true` once the user has hand-added or hand-deleted an exercise. Switches the chapter off the min/max range system (see *Custom lists* below). Absent on documents written before this field existed, so read it as `!!doc.custom_list` — absent means contiguous, which is why it needed no schema migration. |
 | `exercises` | object (name → `{completed, completed_at, comment}`) | Per-exercise progress. The key doubles as the display name and supports future non-numeric identifiers with no migration. |
 | `updated_at` | epoch ms | Last write. |
 
@@ -69,7 +70,16 @@ action rather than a conditional field update.
 
 Comment / free-text edits persist at most **once per 250ms** (trailing flush), not on
 every keystroke. This applies whether the edit comes from the modal's textarea or from
-directly typing in a row's one-line comment box.
+directly typing in a row's one-line comment box. A pending edit is also flushed
+immediately when the modal opens or closes with Save, before either Randomize path, and
+when the tab is hidden.
+
+Because the throttle tracks one target exercise at a time, moving to a different row
+mid-window flushes the previous row's queued edit first. And since a document read back
+from IndexedDB only contains what is *stored*, `occ()` re-applies any still-unpersisted
+comments whenever it swaps a new document into memory — both the write result and the
+fresh document adopted after a version conflict. Without those two rules, typing quickly
+across several rows would silently drop notes.
 
 ## UI flow
 
@@ -79,11 +89,14 @@ directly typing in a row's one-line comment box.
   chapter, and editing book wipes chapter, so a stale descendant value can never
   linger after its ancestor changes.
 - **Randomize** — confirms first (it resets progress), then saves the combo and
-  shuffles the exercise order. A chapter has exactly one active range: `exercises` is
-  rebuilt to contain only the new range's names, dropping anything outside it;
-  `completed`/`completed_at` are always reset, but `comment` carries over for exercise
-  names that were already present (i.e. overlap the old range). Also sets `last_range`
-  and bumps `last_used_at`/`use_count` immediately.
+  shuffles the exercise order. It has two paths, and both reset `completed`/`completed_at`
+  chapter-wide and bump `last_used_at`/`use_count` immediately.
+  - *Range-driven* (the default): `exercises` is rebuilt to contain only the new range's
+    names, dropping anything outside it; `comment` carries over for exercise names that
+    were already present (i.e. overlap the old range). Sets `last_range`, clears
+    `custom_list`.
+  - *Custom list*: shuffles the exercises already there. min/max are ignored, nothing is
+    added or removed, and every comment is left untouched.
 - **Reset Form** (button id `clear-btn`) — a UI-only reset; it deletes nothing.
 - **Delete** — confirms, then permanently deletes the chapter document via
   `deleteChapter` and resets the form like Reset Form.
@@ -92,3 +105,34 @@ directly typing in a row's one-line comment box.
   line (or empty) — typed edits go through the same 250ms throttle as the modal. Once
   a comment has a second line, the box locks (`readonly`, greyed out) and clicking it
   (or Edit) opens the `<dialog>` multi-line comment editor instead.
+- **Edit List** — toggles edit mode for the list. The button keeps its label in both
+  states and only changes color. See *Custom lists* below.
+
+## Custom lists (non-contiguous exercises)
+
+An exercise list does not have to be a contiguous run of numbers. Pressing **Edit List**
+above the list turns on edit mode, which reveals three controls:
+
+- an **×** on every row, which deletes that exercise and its note immediately (no confirm);
+- **New Exercise**, which adds `max(numeric existing names) + 1` and prepends it to the
+  top of the order;
+- **Undo**, a multi-step, session-only history of those adds and deletes. Undoing a delete
+  restores the exercise at its original position with its note intact. The stack lives in
+  memory only and is cleared on reload, chapter switch, Reset Form, Delete, and Randomize.
+
+The first add or delete sets `custom_list = true` and `last_range = null`. From then on the
+chapter is no longer described by a range, so the **min/max inputs are blanked and greyed
+out**, and Randomize reshuffles in place rather than renumbering. The flag is *sticky*: it
+stays set even if the remaining numbers happen to be contiguous again, and Undo does not
+clear it.
+
+Edit mode re-enables the min/max inputs, which is the deliberate way back: type both
+endpoints and press Randomize, and the chapter returns to range-driven numbering
+(`custom_list` cleared, `exercises` rebuilt from the range, out-of-range notes dropped).
+Filling in only one of the two is refused rather than guessed at.
+
+Two rules bound the destruction of notes. A note is lost **only** when a range-driven
+Randomize drops that exercise out of range, or when the row is explicitly deleted with its
+×. Deleting the final remaining row is blocked so a list always has at least one exercise.
+
+Edit mode itself is never persisted — every page load starts with it off.

@@ -86,6 +86,17 @@
 
     <section class="results" aria-live="polite">
       <div id="progress-counter" class="progress-counter"></div>
+
+      <!-- List editing toolbar. "Edit List" keeps its label in both states and
+           only changes color (via .editing); the other two buttons are hidden
+           by CSS until .list-actions carries .edit-mode. app.js hides the whole
+           bar when there is no rendered list. -->
+      <div id="list-actions" class="list-actions hidden">
+        <button type="button" id="edit-list-btn" class="btn btn-secondary">Edit List</button>
+        <button type="button" id="new-exercise-btn" class="btn btn-secondary">New Exercise</button>
+        <button type="button" id="undo-btn" class="btn btn-secondary" disabled>Undo</button>
+      </div>
+
       <!-- app.js injects .exercise-row children here at runtime. -->
       <div id="exercise-list" class="exercise-list"></div>
     </section>
