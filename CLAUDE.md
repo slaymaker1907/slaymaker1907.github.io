@@ -24,6 +24,18 @@ Longer-form reference docs live in `wiki/`:
 
 Agent-facing deep docs for the actively-developed apps live in `for_claude/` — `for_claude/d4cubeoptim.md` and `for_claude/music-practice-tracker.md`. Read the relevant one before touching that directory.
 
+### Always update the docs alongside the code
+
+The docs here are dense and specific — they name button labels, DOM ids, document fields, and invariants — so a code change quietly invalidates them. **Every time you change code, check whether any documentation now describes something that is no longer true, and update it in the same commit.** The places to check, in order:
+
+- `for_claude/<app>.md` — the invariants and the DOM contract for that app.
+- `wiki/<app>.md` — the data model, field tables, and UI flow (and `wiki/README.md` if you add a page).
+- The app's own `README.md`.
+- Explanatory comments in the code itself — the file headers in `db.js`/`app.js` and the block comments in `index.html`/`style.css` carry as much of the contract as the docs do.
+- This file, when a directory's purpose, workflow, or commands change.
+
+This is not optional cleanup to mention at the end; treat a doc that contradicts the code as part of the bug. If you notice existing documentation that was already wrong, fix that too rather than matching it.
+
 ## Commands
 
 - **Serve locally** (from repo root):

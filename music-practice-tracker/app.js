@@ -32,6 +32,7 @@ const bookList = document.getElementById("book-list");
 const chapterList = document.getElementById("chapter-list");
 const minInput = document.getElementById("min");
 const maxInput = document.getElementById("max");
+const numberingSelect = document.getElementById("numbering");
 const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
 const deleteBtn = document.getElementById("delete-btn");
@@ -96,6 +97,131 @@ function parseIntStrict(s) {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/* ------------------------------------------------------------------ *
+ * Numbering systems.
+ *
+ * An exercise's identity has always been an arbitrary string (the key in
+ * doc.exercises), so a numbering system is purely a codec between that string
+ * and a 1-based index: label(n) spells index n, parse(s) reads a name back.
+ * parse() returns null for anything the scheme does not own, which is what lets
+ * a list that still holds names from a previous scheme keep working — those
+ * names are simply skipped when picking the next one, exactly as non-numeric
+ * names always were.
+ *
+ * `textInput` says whether #min/#max accept scheme labels instead of digits.
+ * Only the letter schemes do; Roman numerals are entered as ordinary numbers
+ * (type 1 and 5, get I through V) because typing "IV" into a range box is far
+ * more error-prone than typing "4".
+ * ------------------------------------------------------------------ */
+const LOWER = "abcdefghijklmnopqrstuvwxyz";
+
+// aa/bb/cc after one alphabet is exhausted: the letter cycles every 26 and the
+// repeat count grows, so index 27 is "aa" and 53 is "aaa".
+function letterLabel(n, alphabet) {
+  const i = n - 1;
+  return alphabet[i % 26].repeat(Math.floor(i / 26) + 1);
+}
+
+function letterParse(s, alphabet) {
+  if (typeof s !== "string") return null;
+  const t = s.trim();
+  // One letter of this alphabet, repeated: "b", "bb", "bbb". Mixed runs like
+  // "ab" belong to no index in this scheme and are rejected.
+  if (!t || !alphabet.includes(t[0])) return null;
+  for (const ch of t) if (ch !== t[0]) return null;
+  return alphabet.indexOf(t[0]) + 26 * (t.length - 1) + 1;
+}
+
+const ROMAN = [
+  [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"],
+  [100, "C"], [90, "XC"], [50, "L"], [40, "XL"],
+  [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
+];
+
+function romanLabel(n) {
+  let rest = n;
+  let out = "";
+  for (const [value, sym] of ROMAN) {
+    while (rest >= value) {
+      out += sym;
+      rest -= value;
+    }
+  }
+  return out;
+}
+
+// Decode by summing symbols, then require that re-encoding reproduces the input.
+// That round-trip is the whole validation: it accepts "IV" and "MMMM" (4000 has
+// no shorter standard spelling) while rejecting "IIII" and "IC".
+function romanParse(s) {
+  if (typeof s !== "string") return null;
+  const t = s.trim().toUpperCase();
+  if (!/^[MDCLXVI]+$/.test(t)) return null;
+  let n = 0;
+  let i = 0;
+  while (i < t.length) {
+    const two = ROMAN.find(([, sym]) => sym === t.slice(i, i + 2));
+    const one = ROMAN.find(([, sym]) => sym === t[i]);
+    const hit = two || one;
+    if (!hit) return null;
+    n += hit[0];
+    i += hit[1].length;
+  }
+  return romanLabel(n) === t ? n : null;
+}
+
+const NUMBERING = {
+  numbers: {
+    textInput: false,
+    label: (n) => String(n),
+    parse: parseIntStrict,
+  },
+  "letters-upper": {
+    textInput: true,
+    label: (n) => letterLabel(n, LOWER.toUpperCase()),
+    parse: (s) => letterParse(s, LOWER.toUpperCase()),
+  },
+  "letters-lower": {
+    textInput: true,
+    label: (n) => letterLabel(n, LOWER),
+    parse: (s) => letterParse(s, LOWER),
+  },
+  roman: {
+    textInput: false,
+    label: romanLabel,
+    parse: romanParse,
+  },
+};
+
+const DEFAULT_NUMBERING = "numbers";
+
+// The UI selection. Mirrors the loaded chapter's numbering_system, and is what
+// the write mutators stamp onto the document — the select is the user's intent,
+// so it wins over whatever the doc last said.
+let numberingSystem = DEFAULT_NUMBERING;
+
+// Documents saved before numbering_system existed lack the field; absent = numbers.
+function schemeOf(doc) {
+  return NUMBERING[(doc && doc.numbering_system) || ""] || NUMBERING[DEFAULT_NUMBERING];
+}
+
+function activeScheme() {
+  return NUMBERING[numberingSystem] || NUMBERING[DEFAULT_NUMBERING];
+}
+
+// #min/#max always hold an INDEX. Under a letter scheme the box shows and reads
+// that index as a label; otherwise it is plain digits.
+function parseRangeValue(value) {
+  const scheme = activeScheme();
+  const n = scheme.textInput ? scheme.parse(value) : parseIntStrict(value);
+  return n !== null && n >= 1 ? n : null;
+}
+
+function formatRangeValue(n) {
+  const scheme = activeScheme();
+  return scheme.textInput ? scheme.label(n) : String(n);
+}
+
 // Returns {instrument, book, chapter} (trimmed) only when all three are set.
 function readTriple() {
   const instrument = instrumentInput.value.trim();
@@ -148,18 +274,38 @@ function isCustomList() {
   return !!(currentDoc && currentDoc.custom_list);
 }
 
-// The name for a brand-new exercise: one past the largest numeric name present.
-// Non-numeric names are ignored (a list of only those starts back at "1"), and
+// The name for a brand-new exercise, in the document's own numbering system:
+// the lowest free index between the smallest and largest ones already present,
+// so deleting exercise 3 out of 1-5 and adding one gets 3 back instead of 6.
+// Only when min..max is saturated does it extend past the end. Names the scheme
+// cannot parse are ignored (a list of only those starts back at index 1), and
 // the final loop guarantees the result is actually free.
 function nextExerciseName(doc) {
-  let max = 0;
-  for (const key of Object.keys((doc && doc.exercises) || {})) {
-    const n = parseIntStrict(key);
-    if (n !== null && n > max) max = n;
+  const scheme = schemeOf(doc);
+  const keys = Object.keys((doc && doc.exercises) || {});
+  const taken = new Set();
+  for (const key of keys) {
+    const n = scheme.parse(key);
+    if (n !== null && n >= 1) taken.add(n);
   }
-  let name = String(max + 1);
+
+  let index = 1;
+  if (taken.size > 0) {
+    const min = Math.min(...taken);
+    const max = Math.max(...taken);
+    index = max + 1;
+    for (let i = min; i <= max; i++) {
+      if (!taken.has(i)) {
+        index = i;
+        break;
+      }
+    }
+  }
+
+  let name = scheme.label(index);
   while (doc && doc.exercises && doc.exercises[name]) {
-    name = String(Number(name) + 1);
+    index++;
+    name = scheme.label(index);
   }
   return name;
 }
@@ -322,10 +468,33 @@ function updateCounter() {
   progressCounter.textContent = `${done} of ${total} complete`;
 }
 
+// Point #min/#max at the active scheme: the letter schemes take text, numbers
+// and Roman numerals take digits. A value that no longer parses under the new
+// scheme is cleared rather than left sitting there for Randomize to reject.
+function syncNumberingInputs() {
+  const scheme = activeScheme();
+  const type = scheme.textInput ? "text" : "number";
+  for (const [el, sample] of [[minInput, 1], [maxInput, 12]]) {
+    if (el.type !== type) el.type = type;
+    el.inputMode = scheme.textInput ? "text" : "numeric";
+    el.placeholder = scheme.label(sample);
+    if (el.value.trim() !== "" && parseRangeValue(el.value) === null) el.value = "";
+  }
+}
+
+// Adopt a numbering system into the UI. Unknown/absent names fall back to
+// numbers, so a document from before this feature loads unchanged.
+function applyNumberingSystem(name) {
+  numberingSystem = NUMBERING[name] ? name : DEFAULT_NUMBERING;
+  numberingSelect.value = numberingSystem;
+  syncNumberingInputs();
+}
+
+// last_range always stores INDEXES, so the boxes are re-spelled on the way in.
 function populateRange(range) {
   if (range && Number.isFinite(range.min) && Number.isFinite(range.max)) {
-    minInput.value = String(range.min);
-    maxInput.value = String(range.max);
+    minInput.value = formatRangeValue(range.min);
+    maxInput.value = formatRangeValue(range.max);
   } else if (isCustomList()) {
     // A custom list carries last_range === null. Blank the boxes rather than
     // leaving the previous chapter's digits sitting in disabled inputs, and
@@ -358,6 +527,9 @@ function refreshUndoBtn() {
 
 function setEditMode(on) {
   editMode = !!on;
+  // The label names the action the button performs, so it flips with the state;
+  // .editing supplies the active color on top of that.
+  editListBtn.textContent = editMode ? "Exit Edit" : "Edit List";
   editListBtn.classList.toggle("editing", editMode);
   editListBtn.setAttribute("aria-pressed", editMode ? "true" : "false");
   listActions.classList.toggle("edit-mode", editMode);
@@ -419,7 +591,8 @@ function buildRow(name) {
   const details = document.createElement("button");
   details.type = "button";
   details.className = "ex-details";
-  details.textContent = "Edit";
+  details.textContent = "Expand";
+  details.setAttribute("aria-label", "Expand exercise " + name);
   details.addEventListener("click", () => openModal(name));
 
   // Built on every row but hidden by CSS unless #exercise-list has .edit-mode,
@@ -548,11 +721,14 @@ async function addExercise() {
   if (!key) return;
 
   // The name is computed INSIDE the mutator: on an OCC retry the fresh doc may
-  // already contain a higher exercise (another tab added one), and a name
-  // chosen up front would collide with it.
+  // already contain a name this one would have taken (another tab added one),
+  // and a name chosen up front would collide with it. Gap-filling makes that
+  // more likely than plain max+1 did, not less.
   let addedName = null;
   try {
     await occ(key, (doc) => {
+      // Stamp the selection first: nextExerciseName reads the scheme off the doc.
+      doc.numbering_system = numberingSystem;
       addedName = nextExerciseName(doc);
       ensureExercise(doc, addedName);
       const order = doc.randomization || [];
@@ -701,6 +877,8 @@ async function autoload() {
   if (doc) {
     currentDoc = doc;
     if (switched) resetEditState();
+    // Before populateRange: it spells the range using the adopted scheme.
+    applyNumberingSystem(doc.numbering_system);
     populateRange(doc.last_range);
     renderList();
   } else {
@@ -717,8 +895,9 @@ async function autoload() {
  * ------------------------------------------------------------------ */
 async function onRandomize() {
   const triple = readTriple();
-  const min = parseIntStrict(minInput.value);
-  const max = parseIntStrict(maxInput.value);
+  const scheme = activeScheme();
+  const min = parseRangeValue(minInput.value);
+  const max = parseRangeValue(maxInput.value);
 
   // Validate before touching the DB.
   if (!triple) {
@@ -743,7 +922,11 @@ async function onRandomize() {
   }
 
   if (min === null || max === null) {
-    showError("Min and max must be whole numbers.");
+    showError(
+      scheme.textInput
+        ? "Min and max must be letters like a, b, or aa."
+        : "Min and max must be whole numbers of 1 or more."
+    );
     return;
   }
   if (min > max) {
@@ -768,7 +951,7 @@ async function onRandomize() {
   cancelLastUsedTimer();
 
   const names = [];
-  for (let n = min; n <= max; n++) names.push(String(n));
+  for (let n = min; n <= max; n++) names.push(scheme.label(n));
 
   const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   try {
@@ -788,7 +971,10 @@ async function onRandomize() {
         };
       }
       doc.exercises = newExercises;
+      // last_range holds indexes, not labels, so it stays meaningful if the
+      // numbering system changes later.
       doc.last_range = { min, max };
+      doc.numbering_system = numberingSystem;
       // Rebuilding from a range is exactly what un-customizes a chapter.
       doc.custom_list = false;
       doc.randomization = shuffle(names);
@@ -889,6 +1075,7 @@ async function onDeleteChapter() {
   minInput.value = "";
   maxInput.value = "";
   currentDoc = null;
+  applyNumberingSystem(DEFAULT_NUMBERING);
   resetEditState();
   syncRangeLock();
   clearExerciseList();
@@ -1128,6 +1315,7 @@ function onClearForm() {
   minInput.value = "";
   maxInput.value = "";
   currentDoc = null;
+  applyNumberingSystem(DEFAULT_NUMBERING);
   resetEditState();
   syncRangeLock();
   clearExerciseList();
@@ -1169,6 +1357,28 @@ function onRangeInput() {
   restartLastUsedTimer(); // min/max are top-level fields too
 }
 
+// Changing the numbering system re-spells FUTURE names only; the exercises
+// already in the list keep theirs, because a name is an exercise's identity and
+// its comment is filed under it. Rebuilding from a range (fill in min/max and
+// press Randomize) remains the one way to renumber a whole chapter.
+async function onNumberingChanged() {
+  applyNumberingSystem(numberingSelect.value);
+  restartLastUsedTimer();
+  const key = currentKey();
+  // With nothing saved for this triple yet there is no document to stamp, and
+  // creating one here would put a listless chapter in the datalists; the first
+  // Randomize persists the selection instead.
+  if (!key || !currentDoc) return;
+  try {
+    await occ(key, (doc) => {
+      doc.numbering_system = numberingSystem;
+      return doc;
+    });
+  } catch (err) {
+    console.error("Numbering system persist failed", err);
+  }
+}
+
 function wireEvents() {
   for (const level of ["instrument", "book", "chapter"]) {
     const el = level === "instrument" ? instrumentInput : level === "book" ? bookInput : chapterInput;
@@ -1182,6 +1392,7 @@ function wireEvents() {
     el.addEventListener("input", onRangeInput);
     el.addEventListener("change", onRangeInput);
   }
+  numberingSelect.addEventListener("change", onNumberingChanged);
   randomizeBtn.addEventListener("click", onRandomize);
   clearBtn.addEventListener("click", onClearForm);
   deleteBtn.addEventListener("click", onDeleteChapter);
@@ -1213,6 +1424,7 @@ async function init() {
       instrumentInput.value = recent.instrument || "";
       bookInput.value = recent.book || "";
       chapterInput.value = recent.chapter || "";
+      applyNumberingSystem(recent.numbering_system);
       populateRange(recent.last_range); // blanks + greys min/max for a custom list
       renderList(); // handles null randomization (clears list + counter)
     }

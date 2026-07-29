@@ -61,6 +61,10 @@
         </div>
       </div>
 
+      <!-- The numbering select governs how exercise names are spelled. app.js
+           retypes #min/#max between number and text to match: the letter schemes
+           take letters ("a" to "f"), while numbers and Roman numerals both take
+           plain digits (1-5 renders as I-V). -->
       <fieldset class="range-group">
         <legend>Exercise Number Range</legend>
         <div class="range-fields">
@@ -73,6 +77,15 @@
             <label for="max">Max</label>
             <input type="number" id="max" name="max"
                    min="1" step="1" inputmode="numeric" placeholder="12">
+          </div>
+          <div class="field">
+            <label for="numbering">Numbering</label>
+            <select id="numbering" name="numbering">
+              <option value="numbers">1, 2, 3</option>
+              <option value="letters-upper">A, B, C</option>
+              <option value="letters-lower">a, b, c</option>
+              <option value="roman">I, II, III</option>
+            </select>
           </div>
         </div>
       </fieldset>
@@ -87,10 +100,11 @@
     <section class="results" aria-live="polite">
       <div id="progress-counter" class="progress-counter"></div>
 
-      <!-- List editing toolbar. "Edit List" keeps its label in both states and
-           only changes color (via .editing); the other two buttons are hidden
-           by CSS until .list-actions carries .edit-mode. app.js hides the whole
-           bar when there is no rendered list. -->
+      <!-- List editing toolbar. #edit-list-btn reads "Edit List" when off and
+           "Exit Edit" while editing (app.js swaps textContent in setEditMode,
+           alongside .editing for the active color); the other two buttons are
+           hidden by CSS until .list-actions carries .edit-mode. app.js hides the
+           whole bar when there is no rendered list. -->
       <div id="list-actions" class="list-actions hidden">
         <button type="button" id="edit-list-btn" class="btn btn-secondary">Edit List</button>
         <button type="button" id="new-exercise-btn" class="btn btn-secondary">New Exercise</button>

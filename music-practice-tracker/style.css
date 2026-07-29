@@ -125,6 +125,7 @@ label {
 
 input[type="text"],
 input[type="number"],
+select,
 textarea {
   width: 100%;
   font: inherit;
@@ -136,10 +137,14 @@ textarea {
   transition: border-color .12s ease, box-shadow .12s ease;
 }
 
+/* The native arrow is the affordance; only the box needs to match the inputs. */
+select { cursor: pointer; }
+
 input::placeholder,
 textarea::placeholder { color: var(--text-muted); opacity: .8; }
 
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible {
   outline: none;
   border-color: var(--focus-ring);
@@ -290,9 +295,9 @@ textarea:focus-visible {
 .progress-counter:empty { margin-bottom: 0; }
 
 /* ---- List editing toolbar --------------------------------- *
-   #edit-list-btn keeps the label "Edit List" in both states; .editing supplies
-   the only visual difference (the filled primary color). New Exercise and Undo
-   exist in the DOM at all times but stay hidden until edit mode is on. */
+   #edit-list-btn reads "Edit List" when off and "Exit Edit" while editing (the
+   swap happens in app.js); .editing adds the filled primary color. New Exercise
+   and Undo exist in the DOM at all times but stay hidden until edit mode is on. */
 .list-actions {
   display: flex;
   flex-wrap: wrap;
@@ -326,7 +331,7 @@ textarea:focus-visible {
        <input type="checkbox" class="ex-check">          completion toggle
        <span class="ex-name"></span>                     e.g. "Exercise 12"
        <input type="text" class="ex-oneline">            comment (see below)
-       <button type="button" class="ex-details">Edit</button>
+       <button type="button" class="ex-details">Expand</button>
        <button type="button" class="ex-delete">&times;</button>   delete row
      </div>
 
