@@ -36,6 +36,10 @@ const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
 const deleteBtn = document.getElementById("delete-btn");
 const progressCounter = document.getElementById("progress-counter");
+const listActions = document.getElementById("list-actions");
+const editListBtn = document.getElementById("edit-list-btn");
+const newExerciseBtn = document.getElementById("new-exercise-btn");
+const undoBtn = document.getElementById("undo-btn");
 const exerciseList = document.getElementById("exercise-list");
 
 const detailsModal = document.getElementById("details-modal");
@@ -59,6 +63,14 @@ let modalSnapshot = null;
 // Cached chapter list, used to build the datalists synchronously on every
 // keystroke without hitting the DB each time. Refreshed after mutations.
 let chaptersCache = [];
+
+// Edit List mode: purely a UI state, deliberately NOT persisted. Every page
+// load and every chapter switch starts with it off.
+let editMode = false;
+// Undo history for edit-mode structural changes, newest last. Entries are
+// {type:"add", name} or {type:"delete", name, index, record}. Session-only and
+// in-memory: cleared on reload, chapter switch, form reset, and Randomize.
+let undoStack = [];
 
 /* ------------------------------------------------------------------ *
  * Small pure helpers.
@@ -123,6 +135,35 @@ function findRow(name) {
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Custom (non-contiguous) list helpers.
+ *
+ * A chapter becomes a "custom list" the moment the user adds or deletes a
+ * single exercise. The flag is sticky: it stays set even if the surviving
+ * names happen to be contiguous again, and Undo does not clear it. Only a
+ * deliberate Randomize with both range boxes filled in flips it back off.
+ * ------------------------------------------------------------------ */
+// Documents saved before custom_list existed lack the field; absent = contiguous.
+function isCustomList() {
+  return !!(currentDoc && currentDoc.custom_list);
+}
+
+// The name for a brand-new exercise: one past the largest numeric name present.
+// Non-numeric names are ignored (a list of only those starts back at "1"), and
+// the final loop guarantees the result is actually free.
+function nextExerciseName(doc) {
+  let max = 0;
+  for (const key of Object.keys((doc && doc.exercises) || {})) {
+    const n = parseIntStrict(key);
+    if (n !== null && n > max) max = n;
+  }
+  let name = String(max + 1);
+  while (doc && doc.exercises && doc.exercises[name]) {
+    name = String(Number(name) + 1);
+  }
+  return name;
+}
+
 // The authoritative comment value for a write: while the modal is open for the
 // exercise being written, the textarea wins (so throttle retries pick up the
 // latest keystrokes); otherwise fall back to the in-memory record.
@@ -161,17 +202,35 @@ function ensureDb() {
  * ------------------------------------------------------------------ */
 async function occ(key, mutator) {
   await ensureDb();
+  // Every doc coming back from the DB — a write result or the fresh doc from a
+  // conflict — reflects only what is STORED, so it lacks comments the user has
+  // typed but that are still queued behind the throttle. Swapping it into
+  // currentDoc verbatim would silently wipe them (and the retry mutator, which
+  // reads currentDoc, would then persist the blanks). Carry them across.
+  const carry = (nextDoc) => {
+    // Snapshot HERE, not when occ() was called: edits made during the await
+    // need protecting too, and this still reads the pre-swap currentDoc.
+    const pending = new Map();
+    for (const name of pendingCommentNames) {
+      pending.set(name, currentCommentValue(name));
+    }
+    currentDoc = nextDoc;
+    for (const [name, value] of pending) {
+      // Skip names the write legitimately removed (a row delete, or a Randomize
+      // that dropped them out of range) — those must stay gone, not resurrect.
+      if (!currentDoc.exercises || !currentDoc.exercises[name]) continue;
+      currentDoc.exercises[name].comment = value;
+    }
+    return nextDoc;
+  };
+
   const expected = currentDoc ? currentDoc.version : null;
   try {
-    const result = await mutateChapter(key, expected, mutator);
-    currentDoc = result;
-    return result;
+    return carry(await mutateChapter(key, expected, mutator));
   } catch (err) {
     if (!(err instanceof VersionConflictError)) throw err;
-    currentDoc = err.freshDoc || newChapterDoc(key[0], key[1], key[2]);
-    const result = await mutateChapter(key, currentDoc.version, mutator);
-    currentDoc = result;
-    return result;
+    carry(err.freshDoc || newChapterDoc(key[0], key[1], key[2]));
+    return carry(await mutateChapter(key, currentDoc.version, mutator));
   }
 }
 
@@ -267,7 +326,51 @@ function populateRange(range) {
   if (range && Number.isFinite(range.min) && Number.isFinite(range.max)) {
     minInput.value = String(range.min);
     maxInput.value = String(range.max);
+  } else if (isCustomList()) {
+    // A custom list carries last_range === null. Blank the boxes rather than
+    // leaving the previous chapter's digits sitting in disabled inputs, and
+    // so that Randomize sees "no range" and takes the reshuffle-in-place path.
+    minInput.value = "";
+    maxInput.value = "";
   }
+  syncRangeLock();
+}
+
+// min/max only govern a contiguous chapter. Disable them for a custom list,
+// except inside Edit List mode, where typing a range (then pressing Randomize)
+// is the deliberate way back to contiguous numbering.
+function syncRangeLock() {
+  const locked = isCustomList() && !editMode;
+  minInput.disabled = locked;
+  maxInput.disabled = locked;
+}
+
+// The list toolbar is meaningless with nothing on screen.
+function syncListToolbar() {
+  const hasList = !!(currentDoc && currentDoc.randomization);
+  listActions.classList.toggle("hidden", !hasList);
+  if (!hasList && editMode) setEditMode(false);
+}
+
+function refreshUndoBtn() {
+  undoBtn.disabled = undoStack.length === 0;
+}
+
+function setEditMode(on) {
+  editMode = !!on;
+  editListBtn.classList.toggle("editing", editMode);
+  editListBtn.setAttribute("aria-pressed", editMode ? "true" : "false");
+  listActions.classList.toggle("edit-mode", editMode);
+  exerciseList.classList.toggle("edit-mode", editMode);
+  syncRangeLock();
+  refreshUndoBtn();
+}
+
+// Leaving a chapter (or rebuilding its list) invalidates the undo history,
+// which holds names and positions from the list being left behind.
+function resetEditState() {
+  undoStack = [];
+  setEditMode(false);
 }
 
 // Build one .exercise-row using exactly the frozen classes.
@@ -319,7 +422,16 @@ function buildRow(name) {
   details.textContent = "Edit";
   details.addEventListener("click", () => openModal(name));
 
-  row.append(check, nameSpan, oneline, details);
+  // Built on every row but hidden by CSS unless #exercise-list has .edit-mode,
+  // so toggling Edit List never re-renders (and never interrupts typing).
+  const del = document.createElement("button");
+  del.type = "button";
+  del.className = "ex-delete";
+  del.textContent = "×";
+  del.setAttribute("aria-label", "Delete exercise " + name);
+  del.addEventListener("click", () => deleteExercise(name));
+
+  row.append(check, nameSpan, oneline, details, del);
   return row;
 }
 
@@ -328,12 +440,14 @@ function renderList() {
   clearExerciseList();
   if (!currentDoc || !currentDoc.randomization) {
     clearCounter();
+    syncListToolbar();
     return;
   }
   const frag = document.createDocumentFragment();
   for (const name of currentDoc.randomization) frag.appendChild(buildRow(name));
   exerciseList.appendChild(frag);
   updateCounter();
+  syncListToolbar();
 }
 
 // Sync a single row's completed state (class + checkbox) from currentDoc.
@@ -356,6 +470,162 @@ function refreshRowPreview(name) {
   const comment = (currentDoc && currentDoc.exercises[name] && currentDoc.exercises[name].comment) || "";
   oneline.readOnly = comment.includes("\n");
   oneline.value = firstLine(comment);
+}
+
+/* ------------------------------------------------------------------ *
+ * Edit List mode: structural add/delete of individual exercises.
+ *
+ * Both operations mark the chapter as a custom list and null out last_range,
+ * which is what greys the range inputs and switches Randomize to reshuffling
+ * in place. Neither touches last_used_at: recency means "chapters you were
+ * recently working in", and only top-level field edits and Randomize bump it.
+ *
+ * Every mutator here is written to converge on a desired state (filter a name
+ * out; ensure a name present) rather than to apply a positional delta, so that
+ * occ()'s single retry can safely re-run it against a fresher document.
+ * ------------------------------------------------------------------ */
+function currentKey() {
+  const triple = readTriple();
+  if (!triple) return null;
+  return chapterKey(triple.instrument, triple.book, triple.chapter);
+}
+
+// Drop a pending throttled comment write, but only when it targets `name`.
+// Without this, deleting a row that was just typed into would let the trailing
+// flush re-create the exercise record moments after the delete landed.
+function discardPendingCommentFor(name) {
+  if (commentTargetName === name) cancelCommentThrottle();
+}
+
+async function deleteExercise(name) {
+  if (!currentDoc || !currentDoc.randomization) return;
+  if (currentDoc.randomization.length <= 1) {
+    showError("A list needs at least one exercise.");
+    return;
+  }
+  const key = currentKey();
+  if (!key) return;
+
+  discardPendingCommentFor(name);
+  if (detailsModal.open && modalName === name) detailsModal.close();
+
+  // Snapshot before the write so Undo can restore the note and the position.
+  const entry = {
+    type: "delete",
+    name,
+    index: currentDoc.randomization.indexOf(name),
+    record: { ...(currentDoc.exercises[name] || {}) },
+  };
+  undoStack.push(entry);
+
+  try {
+    await occ(key, (doc) => {
+      doc.randomization = (doc.randomization || []).filter((n) => n !== name);
+      if (doc.exercises) delete doc.exercises[name];
+      doc.custom_list = true;
+      doc.last_range = null;
+      return doc;
+    });
+  } catch (err) {
+    console.error("Delete exercise failed", err);
+    undoStack.pop();
+    refreshUndoBtn();
+    showError("Could not delete that exercise. Please try again.");
+    renderList();
+    return;
+  }
+
+  const row = findRow(name);
+  if (row) row.remove();
+  updateCounter();
+  populateRange(currentDoc.last_range); // blanks + greys the range boxes
+  refreshUndoBtn();
+}
+
+async function addExercise() {
+  if (!currentDoc || !currentDoc.randomization) return;
+  const key = currentKey();
+  if (!key) return;
+
+  // The name is computed INSIDE the mutator: on an OCC retry the fresh doc may
+  // already contain a higher exercise (another tab added one), and a name
+  // chosen up front would collide with it.
+  let addedName = null;
+  try {
+    await occ(key, (doc) => {
+      addedName = nextExerciseName(doc);
+      ensureExercise(doc, addedName);
+      const order = doc.randomization || [];
+      doc.randomization = order.includes(addedName)
+        ? order
+        : [addedName, ...order];
+      doc.custom_list = true;
+      doc.last_range = null;
+      return doc;
+    });
+  } catch (err) {
+    console.error("Add exercise failed", err);
+    showError("Could not add an exercise. Please try again.");
+    return;
+  }
+
+  undoStack.push({ type: "add", name: addedName });
+  exerciseList.prepend(buildRow(addedName));
+  updateCounter();
+  populateRange(currentDoc.last_range);
+  refreshUndoBtn();
+}
+
+// Reverse the most recent edit-mode action. Neither direction clears
+// custom_list — the flag is sticky once the list has been hand-edited.
+async function undoLastEdit() {
+  if (!currentDoc || undoStack.length === 0) return;
+  const key = currentKey();
+  if (!key) return;
+  const entry = undoStack.pop();
+  refreshUndoBtn();
+
+  try {
+    if (entry.type === "add") {
+      discardPendingCommentFor(entry.name);
+      if (detailsModal.open && modalName === entry.name) detailsModal.close();
+      await occ(key, (doc) => {
+        doc.randomization = (doc.randomization || []).filter(
+          (n) => n !== entry.name
+        );
+        if (doc.exercises) delete doc.exercises[entry.name];
+        return doc;
+      });
+      const row = findRow(entry.name);
+      if (row) row.remove();
+    } else {
+      await occ(key, (doc) => {
+        if (!doc.exercises) doc.exercises = {};
+        doc.exercises[entry.name] = { ...entry.record };
+        const order = (doc.randomization || []).filter(
+          (n) => n !== entry.name
+        );
+        // Clamp: a concurrent tab may have shortened the list since the delete.
+        const at = Math.min(Math.max(entry.index, 0), order.length);
+        order.splice(at, 0, entry.name);
+        doc.randomization = order;
+        return doc;
+      });
+      const at = currentDoc.randomization.indexOf(entry.name);
+      const row = buildRow(entry.name);
+      const before = exerciseList.children[at] || null;
+      exerciseList.insertBefore(row, before);
+    }
+  } catch (err) {
+    console.error("Undo failed", err);
+    undoStack.push(entry);
+    refreshUndoBtn();
+    showError("Could not undo that change. Please try again.");
+    renderList();
+    return;
+  }
+
+  updateCounter();
 }
 
 /* ------------------------------------------------------------------ *
@@ -413,8 +683,10 @@ async function autoload() {
     // An incomplete triple can never match a saved doc; drop whatever the
     // previous (now-stale) triple had on screen instead of leaving it behind.
     currentDoc = null;
+    resetEditState();
     clearExerciseList();
     clearCounter();
+    syncListToolbar();
     return;
   }
   const key = chapterKey(triple.instrument, triple.book, triple.chapter);
@@ -423,14 +695,20 @@ async function autoload() {
   // Guard against races: several autoloads may be in flight while typing.
   // Ignore this result if the inputs no longer match what we queried.
   if (!tripleEq(readTriple(), triple)) return;
+  // Only tear down edit mode when we are genuinely moving to another chapter;
+  // a redundant autoload for the same triple must not kick the user out of it.
+  const switched = !tripleEq(currentDoc, triple);
   if (doc) {
     currentDoc = doc;
+    if (switched) resetEditState();
     populateRange(doc.last_range);
     renderList();
   } else {
     currentDoc = null;
+    resetEditState();
     clearExerciseList();
     clearCounter();
+    syncListToolbar();
   }
 }
 
@@ -447,6 +725,23 @@ async function onRandomize() {
     showError("Please fill in instrument, book, and chapter.");
     return;
   }
+
+  // A custom (hand-edited) list is not described by a range. With both boxes
+  // blank, Randomize reshuffles the existing set in place; filling both in is
+  // the deliberate way back to contiguous numbering, and takes the normal
+  // rebuild path below. One box filled is ambiguous, so refuse to guess.
+  const custom = isCustomList();
+  if (custom && min === null && max === null) {
+    await reshuffleCustomList(triple);
+    return;
+  }
+  if (custom && (min === null || max === null)) {
+    showError(
+      "Fill in both min and max to switch back to a numbered range, or clear both to reshuffle the current list."
+    );
+    return;
+  }
+
   if (min === null || max === null) {
     showError("Min and max must be whole numbers.");
     return;
@@ -459,6 +754,10 @@ async function onRandomize() {
     showError("That range is too large (limit is 1000 exercises).");
     return;
   }
+
+  // Land any queued note edit BEFORE the rebuild reads comments off the stored
+  // doc, so a note typed moments ago is carried over rather than lost.
+  flushComment();
 
   const confirmed = window.confirm(
     "Randomizing will reset every exercise's completed checkbox for this chapter, and drop any exercises outside the new range. Comments for exercises staying in range are kept. Continue?"
@@ -490,16 +789,64 @@ async function onRandomize() {
       }
       doc.exercises = newExercises;
       doc.last_range = { min, max };
+      // Rebuilding from a range is exactly what un-customizes a chapter.
+      doc.custom_list = false;
       doc.randomization = shuffle(names);
       doc.randomized_at = Date.now();
       doc.use_count = (doc.use_count || 0) + 1;
       doc.last_used_at = Date.now();
       return doc;
     });
+    resetEditState();
     renderList();
+    syncRangeLock();
     refreshDatalists();
   } catch (err) {
     console.error("Randomize failed", err);
+    showError("Could not save the randomization. Please try again.");
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Randomize for a custom list: reshuffle the exercises that are already
+ * there. min/max are ignored entirely — nothing is added, nothing is
+ * dropped, and every comment is left exactly as it was. Completion state
+ * still resets chapter-wide, matching the contiguous path.
+ * ------------------------------------------------------------------ */
+async function reshuffleCustomList(triple) {
+  flushComment(); // land any in-flight note edit before we rewrite the doc
+  const confirmed = window.confirm(
+    "Randomizing will reset every exercise's completed checkbox for this chapter. Your exercise list and notes are kept. Continue?"
+  );
+  if (!confirmed) return;
+
+  cancelLastUsedTimer();
+
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  try {
+    await occ(key, (doc) => {
+      const names =
+        doc.randomization && doc.randomization.length
+          ? doc.randomization.slice()
+          : Object.keys(doc.exercises || {});
+      for (const nm of names) {
+        ensureExercise(doc, nm);
+        doc.exercises[nm].completed = false;
+        doc.exercises[nm].completed_at = null;
+        // comment deliberately untouched
+      }
+      doc.randomization = shuffle(names);
+      doc.randomized_at = Date.now();
+      doc.use_count = (doc.use_count || 0) + 1;
+      doc.last_used_at = Date.now();
+      return doc; // custom_list and last_range stay as they are
+    });
+    resetEditState();
+    renderList();
+    syncRangeLock();
+    refreshDatalists();
+  } catch (err) {
+    console.error("Reshuffle failed", err);
     showError("Could not save the randomization. Please try again.");
   }
 }
@@ -542,8 +889,11 @@ async function onDeleteChapter() {
   minInput.value = "";
   maxInput.value = "";
   currentDoc = null;
+  resetEditState();
+  syncRangeLock();
   clearExerciseList();
   clearCounter();
+  syncListToolbar();
   rebuildDatalistDom();
   refreshDatalists();
 }
@@ -584,6 +934,10 @@ async function toggleCompleted(name, checked) {
 let commentTimer = null;
 let commentDirty = false;
 let commentTargetName = null;
+// Exercises whose comment has been typed but is not yet known to be persisted.
+// occ() consults this to avoid clobbering those edits when it adopts a write
+// result built from the stored doc.
+let pendingCommentNames = new Set();
 
 function writeCommentNow(name) {
   const triple = readTriple();
@@ -596,10 +950,31 @@ function writeCommentNow(name) {
     ensureExercise(doc, name);
     doc.exercises[name].comment = currentCommentValue(name);
     return doc;
-  }).catch((err) => console.error("Comment persist failed", err));
+  })
+    .then(() => {
+      // Stop protecting this name once its value is on disk — unless newer
+      // keystrokes for it are still queued behind the throttle.
+      if (!(commentDirty && commentTargetName === name)) {
+        pendingCommentNames.delete(name);
+      }
+    })
+    .catch((err) => console.error("Comment persist failed", err));
 }
 
 function scheduleCommentPersist(name) {
+  pendingCommentNames.add(name);
+  // The throttle tracks ONE target at a time. Moving to a different exercise
+  // mid-window would drop the previous one's queued edit on the floor, so flush
+  // it first; the extra write is bounded by how often the user switches rows.
+  if (
+    commentTimer !== null &&
+    commentDirty &&
+    commentTargetName !== null &&
+    commentTargetName !== name
+  ) {
+    writeCommentNow(commentTargetName);
+    commentDirty = false;
+  }
   commentTargetName = name;
   if (commentTimer === null) {
     // Leading edge: persist now and open the 250ms throttle window.
@@ -639,6 +1014,9 @@ function cancelCommentThrottle() {
     commentTimer = null;
   }
   commentDirty = false;
+  // Only the current target's queued edit is being discarded; other names may
+  // still have writes in flight that memory must not regress behind.
+  if (commentTargetName !== null) pendingCommentNames.delete(commentTargetName);
 }
 
 /* ------------------------------------------------------------------ *
@@ -646,7 +1024,11 @@ function cancelCommentThrottle() {
  * ------------------------------------------------------------------ */
 function openModal(name) {
   if (!currentDoc) return;
-  cancelCommentThrottle(); // drop any stale pending write from a prior session
+  // Land any queued edit before taking the snapshot below, rather than dropping
+  // it: the pending write may belong to a different row (whose text must not be
+  // lost) or to this one (where the snapshot must match what is on disk, so
+  // that Cancel reverts to a real state).
+  flushComment();
   ensureExerciseCurrent(name);
   modalName = name;
   const ex = currentDoc.exercises[name];
@@ -746,8 +1128,11 @@ function onClearForm() {
   minInput.value = "";
   maxInput.value = "";
   currentDoc = null;
+  resetEditState();
+  syncRangeLock();
   clearExerciseList();
   clearCounter();
+  syncListToolbar();
   rebuildDatalistDom(); // book/chapter suggestions now have no instrument context
 }
 
@@ -800,6 +1185,9 @@ function wireEvents() {
   randomizeBtn.addEventListener("click", onRandomize);
   clearBtn.addEventListener("click", onClearForm);
   deleteBtn.addEventListener("click", onDeleteChapter);
+  editListBtn.addEventListener("click", () => setEditMode(!editMode));
+  newExerciseBtn.addEventListener("click", addExercise);
+  undoBtn.addEventListener("click", undoLastEdit);
 }
 
 /* ------------------------------------------------------------------ *
@@ -825,12 +1213,17 @@ async function init() {
       instrumentInput.value = recent.instrument || "";
       bookInput.value = recent.book || "";
       chapterInput.value = recent.chapter || "";
-      populateRange(recent.last_range);
+      populateRange(recent.last_range); // blanks + greys min/max for a custom list
       renderList(); // handles null randomization (clears list + counter)
     }
   } catch (err) {
     console.error("Failed to restore most recent chapter", err);
   }
+
+  // Edit mode is session-only: always start off, with an empty undo stack.
+  resetEditState();
+  syncRangeLock();
+  syncListToolbar();
 
   await refreshDatalists();
 }

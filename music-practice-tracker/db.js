@@ -7,6 +7,16 @@
 // other stores and no cross-document relations — a chapter is the unit of read
 // and write.
 //
+// Two shapes of exercise list share that document. Normally the list is a
+// contiguous integer run described by `last_range` {min,max}, regenerated from
+// scratch on every Randomize. Once the user hand-edits the list (adding or
+// deleting individual exercises), `custom_list` flips to true and stays true:
+// `last_range` is set to null, the range inputs stop governing the chapter, and
+// Randomize reshuffles the existing exercise set in place instead of rebuilding
+// it. Documents written before `custom_list` existed simply lack the field, so
+// read it as `!!doc.custom_list` — that absence means "contiguous", which is
+// why this needed no DB_VERSION bump or migration.
+//
 // Optimistic-concurrency (OCC) contract: every document carries a numeric
 // `version`. Writes go through mutateChapter(key, expectedVersion, mutator),
 // which — inside a SINGLE readwrite transaction — reads the current doc, checks
@@ -49,6 +59,7 @@ export function newChapterDoc(instrument, book, chapter) {
     use_count: 0,
     last_used_at: now,
     last_range: null,
+    custom_list: false,
     randomization: null,
     randomized_at: null,
     exercises: {},
