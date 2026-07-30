@@ -17,6 +17,13 @@
 // read it as `!!doc.custom_list` — that absence means "contiguous", which is
 // why this needed no DB_VERSION bump or migration.
 //
+// `numbering_system` names how exercise names are spelled ("numbers",
+// "letters-upper", "letters-lower", "roman"). Exercise identity has always been
+// an arbitrary string key, so this is a display/minting choice only; documents
+// written before it existed lack the field and read as "numbers", which is again
+// why no DB_VERSION bump or migration was needed. `last_range` stores 1-based
+// INDEXES rather than spelled names, so it survives a change of system.
+//
 // Optimistic-concurrency (OCC) contract: every document carries a numeric
 // `version`. Writes go through mutateChapter(key, expectedVersion, mutator),
 // which — inside a SINGLE readwrite transaction — reads the current doc, checks
@@ -60,6 +67,7 @@ export function newChapterDoc(instrument, book, chapter) {
     last_used_at: now,
     last_range: null,
     custom_list: false,
+    numbering_system: "numbers",
     randomization: null,
     randomized_at: null,
     exercises: {},
