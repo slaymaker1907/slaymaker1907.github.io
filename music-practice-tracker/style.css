@@ -294,10 +294,12 @@ textarea:focus-visible {
 }
 .progress-counter:empty { margin-bottom: 0; }
 
-/* ---- List editing toolbar --------------------------------- *
+/* ---- List toolbar ----------------------------------------- *
    #edit-list-btn reads "Edit List" when off and "Exit Edit" while editing (the
-   swap happens in app.js); .editing adds the filled primary color. New Exercise
-   and Undo exist in the DOM at all times but stay hidden until edit mode is on. */
+   swap happens in app.js); .editing adds the filled primary color. Sort is
+   always available. New Exercise exists in the DOM at all times but stays
+   hidden until edit mode is on. (Undo now lives in the form's .actions bar —
+   it reverses Randomize and Delete too, not just list edits.) */
 .list-actions {
   display: flex;
   flex-wrap: wrap;
@@ -307,8 +309,7 @@ textarea:focus-visible {
 
 .list-actions.hidden { display: none; }
 
-.list-actions:not(.edit-mode) #new-exercise-btn,
-.list-actions:not(.edit-mode) #undo-btn { display: none; }
+.list-actions:not(.edit-mode) #new-exercise-btn { display: none; }
 
 #edit-list-btn.editing {
   background: var(--primary);

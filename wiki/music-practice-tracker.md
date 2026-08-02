@@ -46,7 +46,7 @@ cross-document relations — a chapter is the unit of read and write.
 | `use_count` | number | Number of randomizations; tiebreaker for suggestion ordering. |
 | `last_used_at` | epoch ms | Recency. Orders datalist suggestions and picks the doc to autoload on page open (this is the indexed field). Bumped 60s after a top-level field change, or immediately on Randomize. |
 | `last_range` | `{min, max}` \| null | Restores the range inputs on autoload; set on a range-driven Randomize, and `null` for a custom list. Holds 1-based **indexes**, not spelled names, so it survives a change of `numbering_system`. |
-| `randomization` | string[] \| null | The single shuffled order of exercise names, mutated in place by Randomize; `null` = no active list. |
+| `randomization` | string[] \| null | The single order of exercise names — shuffled by Randomize, rewritten by Sort; `null` = no active list. |
 | `randomized_at` | number \| null | When `randomization` was last set. |
 | `custom_list` | boolean | `true` once the user has hand-added or hand-deleted an exercise. Switches the chapter off the min/max range system (see *Custom lists* below). Absent on documents written before this field existed, so read it as `!!doc.custom_list` — absent means contiguous, which is why it needed no schema migration. |
 | `numbering_system` | string | How new exercise names are spelled: `"numbers"`, `"letters-upper"`, `"letters-lower"`, or `"roman"`. Absent on documents written before this field existed (and any unrecognized value) reads as `"numbers"`, so it needed no schema migration. See *Numbering systems* below. |
@@ -63,9 +63,12 @@ On a mismatch (another tab wrote first) it throws `VersionConflictError` carryin
 fresh doc. The controller then reloads the fresh doc, re-applies the field currently
 being edited, and retries **once** — i.e. per-field last-write-wins.
 
-`deleteChapter(key)` is the one exception: it's a plain `store.delete()`, bypassing the
-OCC check entirely, since deleting is a user-confirmed "remove regardless of version"
-action rather than a conditional field update.
+Two functions bypass the OCC check. `deleteChapter(key)` is a plain `store.delete()`,
+since deleting means "remove regardless of version" rather than a conditional field
+update. `restoreChapter(key, resolver)` backs **Undo**: a version conflict has nothing
+useful to retry, because the snapshot Undo wants to write does not get any fresher. It is
+safe only because it hands the resolver the live stored document and the resolver merges
+against it — see *Undo* below.
 
 ## Write throttling
 
@@ -90,9 +93,10 @@ across several rows would silently drop notes.
   The three fields form a hierarchy: editing (or ×-clearing) instrument wipes book and
   chapter, and editing book wipes chapter, so a stale descendant value can never
   linger after its ancestor changes.
-- **Randomize** — confirms first (it resets progress), then saves the combo and
-  shuffles the exercise order. It has two paths, and both reset `completed`/`completed_at`
-  chapter-wide and bump `last_used_at`/`use_count` immediately.
+- **Randomize** — saves the combo and shuffles the exercise order. It has two paths, and
+  both reset `completed`/`completed_at` chapter-wide and bump `last_used_at`/`use_count`
+  immediately. No confirmation dialog: **Undo** is the safety net for this and every
+  other destructive action, and the app has no `window.confirm` calls left.
   - *Range-driven* (the default): `exercises` is rebuilt to contain only the new range's
     names, dropping anything outside it; `comment` carries over for exercise names that
     were already present (i.e. overlap the old range). Sets `last_range`, clears
@@ -100,8 +104,10 @@ across several rows would silently drop notes.
   - *Custom list*: shuffles the exercises already there. min/max are ignored, nothing is
     added or removed, and every comment is left untouched.
 - **Reset Form** (button id `clear-btn`) — a UI-only reset; it deletes nothing.
-- **Delete** — confirms, then permanently deletes the chapter document via
-  `deleteChapter` and resets the form like Reset Form.
+- **Undo** — reverses the last destructive action. See *Undo* below.
+- **Delete** — deletes the chapter document via `deleteChapter` and resets the form like
+  Reset Form. Undoable, which is why it no longer confirms; but the undo history lives in
+  memory, so a reload between the delete and the undo does make it permanent.
 - **Exercise rows** — each row is a completion checkbox + a one-line comment box + an
   **Expand** button. The comment box is directly editable when the comment is a single
   line (or empty) — typed edits go through the same 250ms throttle as the modal. Once
@@ -110,18 +116,68 @@ across several rows would silently drop notes.
 - **Edit List** — toggles edit mode for the list. The button names the action it will
   perform, so it reads "Edit List" when off and **"Exit Edit"** while editing, and fills
   in with the accent color while active. See *Custom lists* below.
+- **Sort** — reorders the list for pruning. See *Sorting* below.
+
+## Sorting
+
+The stored order is a practice shuffle, which makes finding one specific exercise — to
+tick off, or to delete once it is finished — a linear scan. **Sort** rewrites it into the
+order you actually prune in: still-unfinished exercises first, finished ones pushed to
+the bottom, each group climbing by exercise number.
+
+"By number" means by the 1-based **index** the chapter's numbering system parses out of
+the name, never by the spelling. That is what puts `z` (26) before `aa` (27) and `IX` (9)
+before `X` (10), where a plain string compare gets both backwards. A list may legitimately
+hold names minted under an older system that the current one cannot read; those have no
+index to sort by, so they settle at the end of their group in alphabetical order.
+
+Sort changes **only** the order. Completion state, notes, `custom_list`, `last_range`, and
+the recency counters are all left alone, and the new order is saved — it survives a
+reload. It is undoable, and unlike Edit List's controls it is always available.
+
+## Undo
+
+**Undo** reverses the last destructive action: Sort, either Randomize path, adding or
+deleting an exercise, a change of numbering system, and chapter Delete. It replaced every
+confirmation dialog in the app.
+
+Each action snapshots the **whole chapter document** before it writes, rather than
+describing its own inverse — Randomize has no inverse expressible as a delta, and every
+new undoable action used to need another hand-written one. The history is multi-step and
+capped at 20 entries. It lives in memory only and is **never persisted**, so a page reload
+is the one thing that clears it.
+
+The stack is global rather than per-chapter: each entry carries its own instrument / book /
+chapter, so Undo reaches back into a chapter you have navigated away from and refills the
+three inputs to take you there. That is what makes an undoable chapter Delete possible, and
+it is why a chapter switch or a Reset Form no longer clears the history.
+
+### Undo is a merge, not a rewind
+
+With a second tab open on the same chapter, restoring a snapshot wholesale would silently
+revert everything that tab had done since. So Undo performs a three-way merge instead,
+using the document as it stood *immediately after* the action as its base. The rule is one
+line: **the other tab wins on anything it touched since; everything else reverts to the
+snapshot.** Presence counts as a value, so an exercise the other tab added survives the
+undo and one it deleted stays deleted.
+
+The consequence is worth stating plainly: Undo can land the chapter in a state that never
+previously existed — your pre-sort order back, but the other tab's newer checkbox still
+ticked. That is the intended outcome. It is the only behavior that both always lands and
+never silently discards concurrent work.
 
 ## Custom lists (non-contiguous exercises)
 
 An exercise list does not have to be a contiguous run of numbers. Pressing **Edit List**
-above the list turns on edit mode, which reveals three controls:
+above the list turns on edit mode, which reveals two controls:
 
 - an **×** on every row, which deletes that exercise and its note immediately (no confirm);
 - **New Exercise**, which adds the lowest free name and prepends it to the top of the
-  order (see *Gap filling* below);
-- **Undo**, a multi-step, session-only history of those adds and deletes. Undoing a delete
-  restores the exercise at its original position with its note intact. The stack lives in
-  memory only and is cleared on reload, chapter switch, Reset Form, Delete, and Randomize.
+  order (see *Gap filling* below).
+
+Both are undoable — undoing a delete restores the exercise at its original position with
+its note intact — but **Undo** itself is not an edit-mode control; it sits in the header
+form's button row, because it reverses Randomize and chapter Delete too.
 
 The first add or delete sets `custom_list = true` and `last_range = null`. From then on the
 chapter is no longer described by a range, so the **min/max inputs are blanked and greyed
@@ -173,14 +229,21 @@ The choice is stored per chapter in `numbering_system`, so a scales book and an 
 can differ, and it is restored on autoload along with everything else. It governs both
 **New Exercise** and the names a range-driven Randomize generates.
 
-Under a letter system the **min/max boxes take letters** (type `a` and `f` to build `a`–`f`);
-a value that no longer parses when the system changes is cleared. Numbers *and Roman
-numerals* both take ordinary digits — with Roman selected, `1` and `5` build `I`–`V` —
-because typing `IV` into a range box is far more error-prone than typing `4`. `last_range`
-always stores indexes, so a stored range is simply re-spelled if the system changes.
+Under a letter system the **min/max boxes take letters** (type `a` and `f` to build `a`–`f`).
+Numbers *and Roman numerals* both take ordinary digits — with Roman selected, `1` and `5`
+build `I`–`V` — because typing `IV` into a range box is far more error-prone than typing
+`4`. `last_range` always stores indexes, so a stored range is simply re-spelled if the
+system changes.
 
-Switching systems **does not rename the exercises already in the list**: a name is an
-exercise's identity and its note is filed under it. A mixed list is therefore a legitimate
-state, and names the current system cannot read are skipped when picking the next one. The
-way to renumber a whole chapter is the same one that returns it to a contiguous range —
-type both endpoints and press Randomize.
+Switching systems **renames the exercises already in the list**. Every name the outgoing
+system can read is re-spelled by the incoming one at the same index — `1`↔`a`, `2`↔`b`,
+`9`↔`IX` — carrying its completion state and note with it, and the list order is mapped
+through unchanged. The change is undoable and, like every other write action, unconfirmed.
+
+Two things survive the rename untouched. Names the **outgoing** system cannot read have no
+index to carry across, so they keep their name; a mixed list remains a legitimate state,
+and such names are skipped when picking the next one. And a rename that would **collide**
+is dropped rather than guessed at: switching a list holding both `1` and `a` from letters
+to numbers would map `a`→`1` on top of the `1` that is staying put, so `a` simply stays
+`a`. Names that are themselves moving vacate their spelling first, so `1`→`a` can take `a`
+when `a` is in the same breath becoming `b`.

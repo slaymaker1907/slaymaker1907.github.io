@@ -16,6 +16,7 @@ import {
   VersionConflictError,
   mutateChapter,
   deleteChapter,
+  restoreChapter,
 } from "./db.js";
 
 /* ------------------------------------------------------------------ *
@@ -36,11 +37,14 @@ const numberingSelect = document.getElementById("numbering");
 const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
 const deleteBtn = document.getElementById("delete-btn");
+// Undo lives in the form's action bar, not the list toolbar: it now reverses
+// Randomize and chapter Delete too, so it is not an Edit-List-mode control.
+const undoBtn = document.getElementById("undo-btn");
 const progressCounter = document.getElementById("progress-counter");
 const listActions = document.getElementById("list-actions");
 const editListBtn = document.getElementById("edit-list-btn");
+const sortBtn = document.getElementById("sort-btn");
 const newExerciseBtn = document.getElementById("new-exercise-btn");
-const undoBtn = document.getElementById("undo-btn");
 const exerciseList = document.getElementById("exercise-list");
 
 const detailsModal = document.getElementById("details-modal");
@@ -68,9 +72,24 @@ let chaptersCache = [];
 // Edit List mode: purely a UI state, deliberately NOT persisted. Every page
 // load and every chapter switch starts with it off.
 let editMode = false;
-// Undo history for edit-mode structural changes, newest last. Entries are
-// {type:"add", name} or {type:"delete", name, index, record}. Session-only and
-// in-memory: cleared on reload, chapter switch, form reset, and Randomize.
+// Undo history, newest last. Every undoable action snapshots the WHOLE chapter
+// document rather than describing its own inverse, so one mechanism covers
+// Sort, both Randomize paths, add/delete exercise, a numbering-system rename,
+// and chapter Delete. Entry shape:
+//
+//   { key, triple, before: <clone|null>, after: <clone|null> }
+//
+// `before` is the restore target (null = the chapter did not exist yet, so
+// undoing removes it); `after` is the merge base, filled in once the action's
+// write lands (null = the action deleted the chapter). See mergeRestore().
+//
+// The stack is GLOBAL, not per-chapter: each entry carries its own triple, so
+// Undo can reach back into a chapter you have navigated away from — which is
+// what makes an undoable chapter Delete possible. It is therefore NOT cleared
+// by a chapter switch, Reset Form, Randomize, or leaving Edit List mode; only
+// a page load empties it. In-memory and never persisted, capped so a long
+// session cannot grow it without bound.
+const UNDO_LIMIT = 20;
 let undoStack = [];
 
 /* ------------------------------------------------------------------ *
@@ -207,6 +226,50 @@ function schemeOf(doc) {
 
 function activeScheme() {
   return NUMBERING[numberingSystem] || NUMBERING[DEFAULT_NUMBERING];
+}
+
+/* ------------------------------------------------------------------ *
+ * Sort order.
+ *
+ * The stored order is a practice shuffle, which makes finding one specific
+ * exercise (to tick off, or to delete once it is finished) a linear scan. Sort
+ * rewrites it into the order you actually prune in: still-unfinished exercises
+ * first, finished ones pushed to the bottom, each group climbing by exercise
+ * number.
+ *
+ * "By number" means by the 1-based INDEX the chapter's numbering system parses
+ * out of the name, never by the spelling — that is what puts `z` (26) before
+ * `aa` (27) and `IX` (9) before `X` (10), where a string compare would get both
+ * backwards. A list may legitimately hold names minted under an older scheme
+ * that the current one cannot read (invariant 14); those have no index to sort
+ * by, so they settle at the end of their group in plain alphabetical order.
+ * ------------------------------------------------------------------ */
+function sortKey(doc, name) {
+  const ex = doc && doc.exercises && doc.exercises[name];
+  const index = schemeOf(doc).parse(name);
+  return {
+    done: !!(ex && ex.completed),
+    index: index !== null && index >= 1 ? index : null,
+    name,
+  };
+}
+
+function compareSortKeys(a, b) {
+  // Unfinished work first; everything already done sinks to the bottom.
+  if (a.done !== b.done) return a.done ? 1 : -1;
+  // Within a group, unparseable names trail the numbered ones.
+  if ((a.index === null) !== (b.index === null)) return a.index === null ? 1 : -1;
+  if (a.index !== null && a.index !== b.index) return a.index - b.index;
+  return a.name.localeCompare(b.name);
+}
+
+// The sorted order for `names`, read against `doc` for completion state and
+// numbering. Pure: never mutates either argument.
+function sortedOrder(doc, names) {
+  return names
+    .map((name) => sortKey(doc, name))
+    .sort(compareSortKeys)
+    .map((k) => k.name);
 }
 
 // #min/#max always hold an INDEX. Under a letter scheme the box shows and reads
@@ -535,13 +598,12 @@ function setEditMode(on) {
   listActions.classList.toggle("edit-mode", editMode);
   exerciseList.classList.toggle("edit-mode", editMode);
   syncRangeLock();
-  refreshUndoBtn();
 }
 
-// Leaving a chapter (or rebuilding its list) invalidates the undo history,
-// which holds names and positions from the list being left behind.
+// Leaving a chapter drops Edit List mode, but deliberately NOT the undo
+// history: entries carry their own triple, so an undo remains valid (and
+// reachable) after you have navigated elsewhere. Only a page load clears it.
 function resetEditState() {
-  undoStack = [];
   setEditMode(false);
 }
 
@@ -676,20 +738,17 @@ async function deleteExercise(name) {
     showError("A list needs at least one exercise.");
     return;
   }
+  const triple = readTriple();
   const key = currentKey();
-  if (!key) return;
+  if (!key || !triple) return;
 
+  // Snapshot BEFORE discarding the pending write, so the note the user just
+  // typed is captured (snapshotDoc overlays it) and Undo restores it verbatim.
+  // discardPendingCommentFor then stops a throttled write from re-creating the
+  // record moments after the delete lands — invariant 9.
+  const entry = pushUndo(key, triple);
   discardPendingCommentFor(name);
   if (detailsModal.open && modalName === name) detailsModal.close();
-
-  // Snapshot before the write so Undo can restore the note and the position.
-  const entry = {
-    type: "delete",
-    name,
-    index: currentDoc.randomization.indexOf(name),
-    record: { ...(currentDoc.exercises[name] || {}) },
-  };
-  undoStack.push(entry);
 
   try {
     await occ(key, (doc) => {
@@ -701,24 +760,26 @@ async function deleteExercise(name) {
     });
   } catch (err) {
     console.error("Delete exercise failed", err);
-    undoStack.pop();
-    refreshUndoBtn();
+    popUndo(entry);
     showError("Could not delete that exercise. Please try again.");
     renderList();
     return;
   }
 
+  entry.after = structuredClone(currentDoc);
   const row = findRow(name);
   if (row) row.remove();
   updateCounter();
   populateRange(currentDoc.last_range); // blanks + greys the range boxes
-  refreshUndoBtn();
 }
 
 async function addExercise() {
   if (!currentDoc || !currentDoc.randomization) return;
+  const triple = readTriple();
   const key = currentKey();
-  if (!key) return;
+  if (!key || !triple) return;
+
+  const entry = pushUndo(key, triple);
 
   // The name is computed INSIDE the mutator: on an OCC retry the fresh doc may
   // already contain a name this one would have taken (another tab added one),
@@ -741,67 +802,229 @@ async function addExercise() {
     });
   } catch (err) {
     console.error("Add exercise failed", err);
+    popUndo(entry);
     showError("Could not add an exercise. Please try again.");
     return;
   }
 
-  undoStack.push({ type: "add", name: addedName });
+  entry.after = structuredClone(currentDoc);
   exerciseList.prepend(buildRow(addedName));
   updateCounter();
   populateRange(currentDoc.last_range);
+}
+
+// Reorder the list for pruning: unfinished first, finished at the bottom, each
+// group by exercise number. Touches ONLY `randomization` — not custom_list,
+// last_range, completion, comments, or the recency counters. Undoable, and
+// deliberately unconfirmed: Undo is the safety net, not a dialog.
+async function onSort() {
+  if (!currentDoc || !currentDoc.randomization) return;
+  const triple = readTriple();
+  const key = currentKey();
+  if (!key || !triple) return;
+
+  const entry = pushUndo(key, triple);
+
+  try {
+    await occ(key, (doc) => {
+      // Computed from the mutator's OWN doc, so an OCC retry converges on the
+      // correct sorted state instead of replaying a stale array.
+      doc.randomization = sortedOrder(doc, doc.randomization || []);
+      return doc;
+    });
+  } catch (err) {
+    console.error("Sort failed", err);
+    popUndo(entry);
+    showError("Could not sort the list. Please try again.");
+    return;
+  }
+
+  entry.after = structuredClone(currentDoc);
+  renderList();
+}
+
+/* ------------------------------------------------------------------ *
+ * Undo.
+ *
+ * Snapshot the whole document before an action, restore it afterward. This
+ * replaced a set of hand-written inverses (delete → reinsert at index, add →
+ * remove) because every new undoable action needed another one, and Randomize
+ * has no inverse expressible as a delta at all.
+ * ------------------------------------------------------------------ */
+
+// Clone currentDoc with any still-unpersisted comments overlaid, so a note the
+// user typed seconds ago is inside the snapshot rather than reverted by the
+// undo. Deliberately does NOT flushComment(): that would issue a write, and the
+// two callers that most need an accurate snapshot (row delete, chapter Delete)
+// are about to remove the very record it would write to.
+function snapshotDoc() {
+  if (!currentDoc) return null;
+  const clone = structuredClone(currentDoc);
+  for (const name of pendingCommentNames) {
+    if (clone.exercises && clone.exercises[name]) {
+      clone.exercises[name].comment = currentCommentValue(name);
+    }
+  }
+  return clone;
+}
+
+// Take the "before" snapshot and stack it. Call this immediately BEFORE the
+// action's write; the caller fills in entry.after once the write lands, and
+// pops the entry back off if the write fails.
+function pushUndo(key, triple) {
+  const entry = {
+    key,
+    triple: { ...triple },
+    before: snapshotDoc(),
+    after: null,
+  };
+  undoStack.push(entry);
+  // Oldest first: an in-memory stack of whole documents must stay bounded.
+  while (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  refreshUndoBtn();
+  return entry;
+}
+
+function popUndo(entry) {
+  const at = undoStack.lastIndexOf(entry);
+  if (at !== -1) undoStack.splice(at, 1);
   refreshUndoBtn();
 }
 
-// Reverse the most recent edit-mode action. Neither direction clears
-// custom_list — the flag is sticky once the list has been hand-edited.
-async function undoLastEdit() {
-  if (!currentDoc || undoStack.length === 0) return;
-  const key = currentKey();
-  if (!key) return;
+// Deep value equality, enough for the plain JSON-ish records stored here.
+function sameValue(a, b) {
+  if (a === b) return true;
+  if (a === undefined || b === undefined || a === null || b === null) return false;
+  if (typeof a !== "object" || typeof b !== "object") return false;
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) => sameValue(a[k], b[k]));
+}
+
+/* Three-way merge for Undo.
+ *
+ * THE CONFLICT RULE, in one line: the other tab wins on anything it touched
+ * since the action; everything else reverts to the snapshot.
+ *
+ * `after` is what the document looked like right after the action, so any
+ * field where `live` still equals `after` is untouched and safe to revert;
+ * anywhere `live` has moved on, another tab wrote it and keeps it. Note the
+ * consequence — with a second tab active, Undo is a merge, not a rewind, and
+ * can legitimately produce a state that never previously existed (your
+ * pre-sort order back, but the other tab's newer checkbox still ticked).
+ * Pure: never mutates its arguments.
+ */
+function mergeRestore(before, after, live) {
+  // Another tab deleted the chapter outright; there is nothing to merge with,
+  // so the snapshot simply comes back.
+  if (!live) return structuredClone(before);
+
+  const base = after || {};
+  const pick = (field) =>
+    sameValue(live[field], base[field]) ? before[field] : live[field];
+
+  const beforeEx = before.exercises || {};
+  const baseEx = base.exercises || {};
+  const liveEx = live.exercises || {};
+
+  const exercises = {};
+  const names = new Set([
+    ...Object.keys(beforeEx),
+    ...Object.keys(baseEx),
+    ...Object.keys(liveEx),
+  ]);
+  for (const name of names) {
+    // Presence counts as a value, so an exercise another tab added survives
+    // the undo and one it deleted stays deleted.
+    const theirs = sameValue(liveEx[name], baseEx[name]) ? beforeEx[name] : liveEx[name];
+    if (theirs !== undefined) exercises[name] = structuredClone(theirs);
+  }
+
+  // Restore the snapshot's order, minus names that no longer exist, then
+  // append anything the merge kept that it does not mention (in the live
+  // order, so a concurrent add lands where that tab put it relative to itself).
+  const order = (before.randomization || []).filter((n) => exercises[n]);
+  const seen = new Set(order);
+  for (const name of live.randomization || []) {
+    if (exercises[name] && !seen.has(name)) {
+      order.push(name);
+      seen.add(name);
+    }
+  }
+  for (const name of Object.keys(exercises)) {
+    if (!seen.has(name)) {
+      order.push(name);
+      seen.add(name);
+    }
+  }
+
+  return {
+    instrument: before.instrument,
+    book: before.book,
+    chapter: before.chapter,
+    version: live.version, // restoreChapter overwrites this
+    use_count: pick("use_count"),
+    last_used_at: pick("last_used_at"),
+    last_range: pick("last_range"),
+    custom_list: pick("custom_list"),
+    numbering_system: pick("numbering_system"),
+    randomization: before.randomization === null && order.length === 0 ? null : order,
+    randomized_at: pick("randomized_at"),
+    exercises,
+    updated_at: Date.now(), // restoreChapter overwrites this
+  };
+}
+
+// Reverse the most recent undoable action, wherever it happened. Navigates to
+// that chapter so the result is visible — the action may well have been in a
+// chapter the user has since left (in particular, one they deleted).
+async function undoLast() {
+  if (undoStack.length === 0) return;
   const entry = undoStack.pop();
   refreshUndoBtn();
 
+  // The action being undone may have targeted the chapter on screen, so drop
+  // any in-flight comment write before the restore rather than after it.
+  cancelCommentThrottle();
+  cancelLastUsedTimer();
+  if (detailsModal.open) detailsModal.close();
+  // Same hazard as chapter Delete: undoing a create removes the document, and a
+  // comment write still in flight would put it straight back.
+  await drainCommentWrites();
+
+  let restored;
   try {
-    if (entry.type === "add") {
-      discardPendingCommentFor(entry.name);
-      if (detailsModal.open && modalName === entry.name) detailsModal.close();
-      await occ(key, (doc) => {
-        doc.randomization = (doc.randomization || []).filter(
-          (n) => n !== entry.name
-        );
-        if (doc.exercises) delete doc.exercises[entry.name];
-        return doc;
-      });
-      const row = findRow(entry.name);
-      if (row) row.remove();
-    } else {
-      await occ(key, (doc) => {
-        if (!doc.exercises) doc.exercises = {};
-        doc.exercises[entry.name] = { ...entry.record };
-        const order = (doc.randomization || []).filter(
-          (n) => n !== entry.name
-        );
-        // Clamp: a concurrent tab may have shortened the list since the delete.
-        const at = Math.min(Math.max(entry.index, 0), order.length);
-        order.splice(at, 0, entry.name);
-        doc.randomization = order;
-        return doc;
-      });
-      const at = currentDoc.randomization.indexOf(entry.name);
-      const row = buildRow(entry.name);
-      const before = exerciseList.children[at] || null;
-      exerciseList.insertBefore(row, before);
-    }
+    restored = await restoreChapter(entry.key, (live) =>
+      entry.before === null ? null : mergeRestore(entry.before, entry.after, live)
+    );
   } catch (err) {
     console.error("Undo failed", err);
     undoStack.push(entry);
     refreshUndoBtn();
     showError("Could not undo that change. Please try again.");
-    renderList();
     return;
   }
 
-  updateCounter();
+  // Navigate to the restored chapter (or away from one that undo removed).
+  instrumentInput.value = entry.triple.instrument;
+  bookInput.value = entry.triple.book;
+  chapterInput.value = entry.triple.chapter;
+  currentDoc = restored || null;
+  if (currentDoc) {
+    applyNumberingSystem(currentDoc.numbering_system);
+    populateRange(currentDoc.last_range);
+    renderList();
+  } else {
+    applyNumberingSystem(DEFAULT_NUMBERING);
+    minInput.value = "";
+    maxInput.value = "";
+    clearExerciseList();
+    clearCounter();
+    syncListToolbar();
+  }
+  syncRangeLock();
+  refreshDatalists();
 }
 
 /* ------------------------------------------------------------------ *
@@ -942,10 +1165,10 @@ async function onRandomize() {
   // doc, so a note typed moments ago is carried over rather than lost.
   flushComment();
 
-  const confirmed = window.confirm(
-    "Randomizing will reset every exercise's completed checkbox for this chapter, and drop any exercises outside the new range. Comments for exercises staying in range are kept. Continue?"
-  );
-  if (!confirmed) return;
+  // No confirmation dialog: this rebuild is destructive (checkboxes reset,
+  // out-of-range exercises dropped) but fully undoable.
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  const entry = pushUndo(key, triple);
 
   // Randomize settles any pending inactivity timer and bumps last_used_at now.
   cancelLastUsedTimer();
@@ -953,7 +1176,6 @@ async function onRandomize() {
   const names = [];
   for (let n = min; n <= max; n++) names.push(scheme.label(n));
 
-  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   try {
     await occ(key, (doc) => {
       doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
@@ -983,12 +1205,14 @@ async function onRandomize() {
       doc.last_used_at = Date.now();
       return doc;
     });
+    entry.after = structuredClone(currentDoc);
     resetEditState();
     renderList();
     syncRangeLock();
     refreshDatalists();
   } catch (err) {
     console.error("Randomize failed", err);
+    popUndo(entry);
     showError("Could not save the randomization. Please try again.");
   }
 }
@@ -1001,14 +1225,12 @@ async function onRandomize() {
  * ------------------------------------------------------------------ */
 async function reshuffleCustomList(triple) {
   flushComment(); // land any in-flight note edit before we rewrite the doc
-  const confirmed = window.confirm(
-    "Randomizing will reset every exercise's completed checkbox for this chapter. Your exercise list and notes are kept. Continue?"
-  );
-  if (!confirmed) return;
+  // Unconfirmed and undoable, like the contiguous path.
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  const entry = pushUndo(key, triple);
 
   cancelLastUsedTimer();
 
-  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   try {
     await occ(key, (doc) => {
       const names =
@@ -1027,19 +1249,24 @@ async function reshuffleCustomList(triple) {
       doc.last_used_at = Date.now();
       return doc; // custom_list and last_range stay as they are
     });
+    entry.after = structuredClone(currentDoc);
     resetEditState();
     renderList();
     syncRangeLock();
     refreshDatalists();
   } catch (err) {
     console.error("Reshuffle failed", err);
+    popUndo(entry);
     showError("Could not save the randomization. Please try again.");
   }
 }
 
 /* ------------------------------------------------------------------ *
- * Delete — removes the whole saved chapter document. Destructive and
- * confirmed; resets the form afterward like Reset Form.
+ * Delete — removes the whole saved chapter document, then resets the form
+ * like Reset Form. Destructive but undoable: the snapshot taken here is what
+ * lets Undo put the chapter back (and navigate to it), which is why it no
+ * longer asks for confirmation. The undo stack is in-memory, so a reload
+ * between the delete and the undo does make it permanent.
  * ------------------------------------------------------------------ */
 async function onDeleteChapter() {
   const triple = readTriple();
@@ -1052,19 +1279,24 @@ async function onDeleteChapter() {
     return;
   }
 
-  const confirmed = window.confirm(
-    `Delete the saved entry for ${triple.instrument} / ${triple.book} / ${triple.chapter}? This cannot be undone.`
-  );
-  if (!confirmed) return;
+  // Snapshot first (it captures unpersisted notes without writing), THEN drop
+  // the throttle. Flushing here would push a write at the record we are about
+  // to delete, which could land after the delete and resurrect the chapter.
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  const entry = pushUndo(key, triple);
+  entry.after = null; // the action leaves nothing stored to merge against
 
   cancelLastUsedTimer();
   cancelCommentThrottle();
+  // Let any comment write already in flight land BEFORE the delete; its mutator
+  // would otherwise re-create the document moments after we removed it.
+  await drainCommentWrites();
 
-  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   try {
     await deleteChapter(key);
   } catch (err) {
     console.error("Delete failed", err);
+    popUndo(entry);
     showError("Could not delete this chapter. Please try again.");
     return;
   }
@@ -1125,6 +1357,18 @@ let commentTargetName = null;
 // occ() consults this to avoid clobbering those edits when it adopts a write
 // result built from the stored doc.
 let pendingCommentNames = new Set();
+// Comment writes are fire-and-forget, and their mutator RE-CREATES a missing
+// document. Anything that removes a document must therefore wait for them to
+// settle first, or a write still in flight lands afterwards and resurrects the
+// chapter. (This used to be hidden by the delete confirmation dialog, whose
+// blocking prompt gave in-flight writes time to land before the delete ran.)
+const inFlightCommentWrites = new Set();
+
+async function drainCommentWrites() {
+  while (inFlightCommentWrites.size) {
+    await Promise.allSettled([...inFlightCommentWrites]);
+  }
+}
 
 function writeCommentNow(name) {
   const triple = readTriple();
@@ -1132,12 +1376,17 @@ function writeCommentNow(name) {
   const key = chapterKey(triple.instrument, triple.book, triple.chapter);
   // Textarea value is authoritative and re-read inside the mutator, so OCC
   // retries against a fresh doc still persist the latest keystrokes.
-  occ(key, (doc) => {
+  const write = occ(key, (doc) => {
     doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
     ensureExercise(doc, name);
     doc.exercises[name].comment = currentCommentValue(name);
     return doc;
-  })
+  });
+  inFlightCommentWrites.add(write);
+  write
+    .catch(() => {})
+    .finally(() => inFlightCommentWrites.delete(write));
+  write
     .then(() => {
       // Stop protecting this name once its value is on disk — unless newer
       // keystrokes for it are still queued behind the throttle.
@@ -1357,26 +1606,104 @@ function onRangeInput() {
   restartLastUsedTimer(); // min/max are top-level fields too
 }
 
-// Changing the numbering system re-spells FUTURE names only; the exercises
-// already in the list keep theirs, because a name is an exercise's identity and
-// its comment is filed under it. Rebuilding from a range (fill in min/max and
-// press Randomize) remains the one way to renumber a whole chapter.
+/* Build the old-name -> new-name map for a change of numbering system.
+ *
+ * Every name the OLD scheme can parse is re-spelled by the NEW scheme at the
+ * SAME index, so 1<->a, 2<->b, 9<->IX. Names the old scheme cannot read have
+ * no index to carry across and keep their name (a mixed-scheme list is a
+ * legitimate state, not a bug to repair).
+ *
+ * Renames that would collide are dropped rather than guessed at: switching a
+ * list holding both "1" and "a" from letters to numbers would map "a"->"1" on
+ * top of an existing "1", so "a" simply stays "a". Two source names competing
+ * for one target resolve the same way — first one wins, the rest stay put.
+ * Pure, and returns only the entries that actually change.
+ */
+function buildRenameMap(names, fromScheme, toScheme) {
+  const indexOf = new Map();
+  for (const name of names) {
+    const index = fromScheme.parse(name);
+    if (index !== null && index >= 1) indexOf.set(name, index);
+  }
+
+  // Names that are staying put claim their spelling up front: those the old
+  // scheme cannot read, and those the new scheme spells identically. Names
+  // that ARE moving vacate theirs, so 1->a can take "a" if "a" is becoming "b".
+  const taken = new Set();
+  for (const name of names) {
+    const index = indexOf.get(name);
+    if (index === undefined || toScheme.label(index) === name) taken.add(name);
+  }
+
+  const map = new Map();
+  for (const name of names) {
+    const index = indexOf.get(name);
+    if (index === undefined) continue;
+    const next = toScheme.label(index);
+    if (next === name || taken.has(next)) continue;
+    map.set(name, next);
+    taken.add(next);
+  }
+  return map;
+}
+
+// Changing the numbering system re-spells the whole chapter: every exercise the
+// outgoing scheme can parse is renamed to the incoming scheme's spelling at the
+// same index, carrying its completion state and comment with it, and the list
+// order is mapped through unchanged. `last_range` holds INDEXES, so it needs no
+// translation. Undoable and unconfirmed like the other write actions.
 async function onNumberingChanged() {
   applyNumberingSystem(numberingSelect.value);
   restartLastUsedTimer();
+  const triple = readTriple();
   const key = currentKey();
   // With nothing saved for this triple yet there is no document to stamp, and
   // creating one here would put a listless chapter in the datalists; the first
   // Randomize persists the selection instead.
-  if (!key || !currentDoc) return;
+  if (!key || !triple || !currentDoc) return;
+
+  // Land any queued note edit first. The rename moves each exercise record to a
+  // NEW key, and occ()'s carry() only re-applies pending comments to names that
+  // still exist in the incoming doc — so a note queued against "1" would be lost
+  // the moment "1" becomes "a".
+  flushComment();
+
+  const entry = pushUndo(key, triple);
   try {
     await occ(key, (doc) => {
+      // Re-derive from the mutator's own doc: on an OCC retry the fresh doc may
+      // hold names this tab never saw, and they need renaming too.
+      const from = schemeOf(doc);
+      const to = activeScheme();
+      const names = Object.keys(doc.exercises || {});
+      const renames = buildRenameMap(names, from, to);
+
+      const exercises = {};
+      for (const name of names) {
+        exercises[renames.get(name) || name] = doc.exercises[name];
+      }
+      doc.exercises = exercises;
+      if (doc.randomization) {
+        doc.randomization = doc.randomization.map((n) => renames.get(n) || n);
+      }
       doc.numbering_system = numberingSystem;
       return doc;
     });
   } catch (err) {
     console.error("Numbering system persist failed", err);
+    popUndo(entry);
+    showError("Could not change the numbering system. Please try again.");
+    return;
   }
+
+  entry.after = structuredClone(currentDoc);
+  // applyNumberingSystem blanked #min/#max because the digits it found there no
+  // longer parse as (say) letters. Now that the chapter itself has been
+  // renumbered, re-spell the range from last_range, which holds INDEXES and so
+  // survived the switch untouched — otherwise the boxes come back empty and
+  // Randomize refuses the chapter it was just describing.
+  populateRange(currentDoc.last_range);
+  renderList();
 }
 
 function wireEvents() {
@@ -1396,9 +1723,10 @@ function wireEvents() {
   randomizeBtn.addEventListener("click", onRandomize);
   clearBtn.addEventListener("click", onClearForm);
   deleteBtn.addEventListener("click", onDeleteChapter);
+  undoBtn.addEventListener("click", undoLast);
   editListBtn.addEventListener("click", () => setEditMode(!editMode));
+  sortBtn.addEventListener("click", onSort);
   newExerciseBtn.addEventListener("click", addExercise);
-  undoBtn.addEventListener("click", undoLastEdit);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1432,8 +1760,11 @@ async function init() {
     console.error("Failed to restore most recent chapter", err);
   }
 
-  // Edit mode is session-only: always start off, with an empty undo stack.
+  // Edit mode is session-only, and a page load is the one thing that empties
+  // the undo stack (it is in-memory and never persisted).
+  undoStack = [];
   resetEditState();
+  refreshUndoBtn();
   syncRangeLock();
   syncListToolbar();
 

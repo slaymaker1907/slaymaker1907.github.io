@@ -33,6 +33,14 @@
 // doc) is thrown so the caller can reconcile and retry. Passing
 // expectedVersion === null skips the check entirely (create-if-absent / no
 // check), used on the very first Randomize.
+//
+// Exactly TWO functions bypass that check, both deliberately:
+// deleteChapter(key), because removing a chapter means "get rid of this
+// regardless of version"; and restoreChapter(key, resolver), used by Undo.
+// restoreChapter is only safe because it hands the resolver the live stored
+// document and the resolver MERGES against it — see app.js's mergeRestore().
+// Never use restoreChapter for a plain "write this doc back": it wins
+// unconditionally, so an unmerged document would erase another tab's edits.
 
 export const APP_GUID = "339718e4-583f-4270-bd72-23f4d23a6c9e";
 export const DB_NAME = `music-practice-tracker-${APP_GUID}`;
@@ -159,6 +167,61 @@ export async function deleteChapter(key) {
   const db = await openDb();
   const store = db.transaction(STORE, "readwrite").objectStore(STORE);
   return requestToPromise(store.delete(key));
+}
+
+// --- undo restore -----------------------------------------------------------
+
+// Read-modify-write for Undo, in ONE transaction like mutateChapter but with no
+// version check. `resolver(stored | null)` returns the document to store, or
+// null to remove the record (undoing an action that created the chapter).
+//
+// The missing version check is the whole point: Undo must always land, and a
+// conflict has nothing useful to retry — the snapshot it wants to restore does
+// not get "fresher". Safety comes from the resolver instead, which is handed
+// the live document and is required to merge against it rather than overwrite
+// it (app.js's mergeRestore). Resolves with the stored document, or null.
+export async function restoreChapter(key, resolver) {
+  const db = await openDb();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+
+    let result = null;
+    let resolverError = null;
+
+    const getReq = store.get(key);
+    getReq.onsuccess = () => {
+      const live = getReq.result || null;
+
+      let next;
+      try {
+        next = resolver(live);
+      } catch (err) {
+        resolverError = err;
+        tx.abort();
+        return;
+      }
+
+      if (next === null || next === undefined) {
+        store.delete(key);
+        return;
+      }
+
+      // Advance past whatever is stored so other tabs' next OCC write conflicts
+      // and retries against this state rather than silently clobbering it.
+      next.version = (live ? live.version : -1) + 1;
+      next.updated_at = Date.now();
+      result = next;
+      store.put(next);
+    };
+
+    tx.oncomplete = () => resolve(result);
+    tx.onabort = () =>
+      reject(resolverError || tx.error || new Error("restoreChapter transaction aborted"));
+    tx.onerror = () =>
+      reject(resolverError || tx.error || new Error("restoreChapter transaction error"));
+  });
 }
 
 // --- optimistic-concurrency write ------------------------------------------

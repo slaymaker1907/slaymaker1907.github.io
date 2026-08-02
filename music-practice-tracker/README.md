@@ -4,8 +4,13 @@ A small browser app that randomizes and tracks progress through musical exercise
 
 Two things the range does not have to dictate:
 
-- **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems double up after `z` (`aa`, `bb`, `cc`).
-- **Hand-edited lists** — **Edit List** turns on edit mode, where you can delete individual exercises with the ×, add one with **New Exercise** (which reuses the lowest gap before extending past the end), and step back through those changes with **Undo**. A hand-edited chapter stops being governed by min/max; filling both boxes in and pressing Randomize is the way back to a contiguous range.
+- **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems double up after `z` (`aa`, `bb`, `cc`). Switching systems renumbers the chapter you are on, carrying every checkbox and note across.
+- **Hand-edited lists** — **Edit List** turns on edit mode, where you can delete individual exercises with the × and add one with **New Exercise** (which reuses the lowest gap before extending past the end). A hand-edited chapter stops being governed by min/max; filling both boxes in and pressing Randomize is the way back to a contiguous range.
+
+Two buttons make a day's practice easier to work through:
+
+- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: still-unfinished exercises first, finished ones at the bottom, each group climbing by exercise number (so `z` before `aa`, and `IX` before `X`).
+- **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
 
 ## Run locally
 
@@ -32,9 +37,11 @@ There is **no build step and no dependencies** — the files are served exactly 
 
 All state persists in IndexedDB under a database named `music-practice-tracker-<guid>`, as one self-contained document per (instrument, book, chapter).
 
-Re-randomizing a chapter always clears every completion checkbox — that is the point of it, and it asks for confirmation first. Your notes are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes go with them. Re-randomizing a hand-edited list keeps every exercise and note as-is.
+Re-randomizing a chapter always clears every completion checkbox — that is the point of it. Your notes are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes go with them. Re-randomizing a hand-edited list keeps every exercise and note as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
 
-**Reset Form** just clears the form — it deletes nothing, and retyping the same instrument/book/chapter loads the saved chapter straight back. **Delete** is the destructive one: it removes the saved chapter for good.
+**Reset Form** just clears the form — it deletes nothing, and retyping the same instrument/book/chapter loads the saved chapter straight back. **Delete** removes the saved chapter; Undo brings it back (and takes you to it), as long as you have not reloaded the page in between.
+
+With the app open in two tabs on the same chapter, Undo merges rather than overwrites: it restores your snapshot but keeps anything the other tab changed in the meantime.
 
 ## Contributing
 

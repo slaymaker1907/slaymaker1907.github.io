@@ -90,9 +90,13 @@
         </div>
       </fieldset>
 
+      <!-- Randomize and Delete no longer confirm; #undo-btn is the safety net
+           for both, which is why it sits here rather than in the list toolbar.
+           It is disabled whenever the undo stack is empty. -->
       <div class="actions">
         <button type="button" id="randomize-btn" class="btn btn-primary">Randomize</button>
         <button type="button" id="clear-btn" class="btn btn-secondary">Reset Form</button>
+        <button type="button" id="undo-btn" class="btn btn-secondary" disabled>Undo</button>
         <button type="button" id="delete-btn" class="btn btn-danger">Delete</button>
       </div>
     </form>
@@ -100,15 +104,16 @@
     <section class="results" aria-live="polite">
       <div id="progress-counter" class="progress-counter"></div>
 
-      <!-- List editing toolbar. #edit-list-btn reads "Edit List" when off and
-           "Exit Edit" while editing (app.js swaps textContent in setEditMode,
-           alongside .editing for the active color); the other two buttons are
-           hidden by CSS until .list-actions carries .edit-mode. app.js hides the
-           whole bar when there is no rendered list. -->
+      <!-- List toolbar. #edit-list-btn reads "Edit List" when off and "Exit
+           Edit" while editing (app.js swaps textContent in setEditMode,
+           alongside .editing for the active color). #sort-btn is always
+           available; #new-exercise-btn is hidden by CSS until .list-actions
+           carries .edit-mode. app.js hides the whole bar when there is no
+           rendered list. -->
       <div id="list-actions" class="list-actions hidden">
         <button type="button" id="edit-list-btn" class="btn btn-secondary">Edit List</button>
+        <button type="button" id="sort-btn" class="btn btn-secondary">Sort</button>
         <button type="button" id="new-exercise-btn" class="btn btn-secondary">New Exercise</button>
-        <button type="button" id="undo-btn" class="btn btn-secondary" disabled>Undo</button>
       </div>
 
       <!-- app.js injects .exercise-row children here at runtime. -->
