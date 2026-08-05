@@ -107,12 +107,16 @@
       <!-- List toolbar. #edit-list-btn reads "Edit List" when off and "Exit
            Edit" while editing (app.js swaps textContent in setEditMode,
            alongside .editing for the active color). #sort-btn is always
-           available; #new-exercise-btn is hidden by CSS until .list-actions
-           carries .edit-mode. app.js hides the whole bar when there is no
-           rendered list. -->
+           available; #new-exercise-btn and #new-exercise-name are hidden by
+           CSS until .list-actions carries .edit-mode. #new-exercise-name
+           always starts empty; its placeholder shows the auto-computed
+           default name (app.js's nextExerciseName()) and is kept current by
+           refreshNewExercisePlaceholder(). app.js hides the whole bar when
+           there is no rendered list. -->
       <div id="list-actions" class="list-actions hidden">
         <button type="button" id="edit-list-btn" class="btn btn-secondary">Edit List</button>
         <button type="button" id="sort-btn" class="btn btn-secondary">Sort</button>
+        <input type="text" id="new-exercise-name" class="new-exercise-name" autocomplete="off" aria-label="New exercise name">
         <button type="button" id="new-exercise-btn" class="btn btn-secondary">New Exercise</button>
       </div>
 

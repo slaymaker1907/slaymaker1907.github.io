@@ -309,7 +309,8 @@ textarea:focus-visible {
 
 .list-actions.hidden { display: none; }
 
-.list-actions:not(.edit-mode) #new-exercise-btn { display: none; }
+.list-actions:not(.edit-mode) #new-exercise-btn,
+.list-actions:not(.edit-mode) #new-exercise-name { display: none; }
 
 #edit-list-btn.editing {
   background: var(--primary);
@@ -317,6 +318,31 @@ textarea:focus-visible {
   border-color: var(--primary);
 }
 #edit-list-btn.editing:hover { background: var(--primary-hover); }
+
+/* Always starts empty; the placeholder (set by app.js) shows the
+   auto-computed default name so typing is optional. .invalid flags a
+   trimmed value that already matches an existing exercise, whether caught
+   live (debounced) or at New Exercise click time. */
+.new-exercise-name {
+  flex: 0 1 12rem;
+  min-width: 6rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: .55rem .65rem;
+  transition: border-color .12s ease, box-shadow .12s ease;
+}
+.new-exercise-name:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-ring) 30%, transparent);
+}
+.new-exercise-name.invalid {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface));
+}
 
 .exercise-list {
   display: flex;
@@ -448,6 +474,27 @@ textarea:focus-visible {
 }
 .exercise-row.completed { background: var(--surface-alt); }
 
+/* Duplicate-name flash: New Exercise attempted a name already on this row.
+   .flash-duplicate plays a one-shot entrance animation into the settled
+   highlight color below, which app.js holds for 5s then removes via
+   classList.remove (fading back out through the transition above). */
+.exercise-row { transition: background-color .3s ease, box-shadow .3s ease; }
+
+@keyframes exercise-row-flash-in {
+  from {
+    background: color-mix(in srgb, var(--danger) 35%, var(--surface));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 50%, transparent);
+  }
+  to {
+    background: color-mix(in srgb, var(--danger) 18%, var(--surface));
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.exercise-row.flash-duplicate {
+  animation: exercise-row-flash-in .6s ease-out;
+  background: color-mix(in srgb, var(--danger) 18%, var(--surface));
+}
+
 /* ---- Details modal (native <dialog>) ---------------------- */
 .details-modal {
   width: min(92vw, 560px);
@@ -507,5 +554,5 @@ textarea:focus-visible {
 
 /* ---- Motion preference ------------------------------------ */
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  * { transition: none !important; animation: none !important; }
 }

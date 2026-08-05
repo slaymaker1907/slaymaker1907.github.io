@@ -45,6 +45,7 @@ const listActions = document.getElementById("list-actions");
 const editListBtn = document.getElementById("edit-list-btn");
 const sortBtn = document.getElementById("sort-btn");
 const newExerciseBtn = document.getElementById("new-exercise-btn");
+const newExerciseNameInput = document.getElementById("new-exercise-name");
 const exerciseList = document.getElementById("exercise-list");
 
 const detailsModal = document.getElementById("details-modal");
@@ -598,6 +599,18 @@ function setEditMode(on) {
   listActions.classList.toggle("edit-mode", editMode);
   exerciseList.classList.toggle("edit-mode", editMode);
   syncRangeLock();
+  if (editMode) {
+    refreshNewExercisePlaceholder();
+  } else {
+    // #new-exercise-name always starts empty; leaving Edit List mode (Exit
+    // Edit, Reset Form, Delete, any Randomize, a chapter switch, or page
+    // load — every path runs through resetEditState()) resets it in case it
+    // held an untouched or partially-typed value, and drops any pending
+    // live-validity check so it can't fire against a hidden, cleared input.
+    cancelNewExerciseNameCheck();
+    newExerciseNameInput.value = "";
+    newExerciseNameInput.classList.remove("invalid");
+  }
 }
 
 // Leaving a chapter drops Edit List mode, but deliberately NOT the undo
@@ -670,9 +683,19 @@ function buildRow(name) {
   return row;
 }
 
+// Keeps #new-exercise-name's placeholder honest with whatever
+// nextExerciseName(currentDoc) would mint right now. Called from renderList()
+// (covers autoload/switch, Undo, Randomize/Sort, numbering rename, init) and
+// from setEditMode(true); addExercise()/deleteExercise() call it explicitly
+// too, since both intentionally skip renderList() for performance.
+function refreshNewExercisePlaceholder() {
+  newExerciseNameInput.placeholder = currentDoc ? nextExerciseName(currentDoc) : "";
+}
+
 // Render the whole list from currentDoc.randomization (in order).
 function renderList() {
   clearExerciseList();
+  refreshNewExercisePlaceholder();
   if (!currentDoc || !currentDoc.randomization) {
     clearCounter();
     syncListToolbar();
@@ -732,6 +755,82 @@ function discardPendingCommentFor(name) {
   if (commentTargetName === name) cancelCommentThrottle();
 }
 
+// Thrown INSIDE the occ() mutator in addExercise() when the resolved name
+// already exists. Deliberately NOT a VersionConflictError: mutateChapter
+// aborts its transaction on ANY mutator throw (before next.version/store.put
+// are reached, so nothing persists — see db.js), and occ() only retries a
+// VersionConflictError, so this propagates straight out to addExercise()'s
+// catch block instead of being retried.
+class DuplicateExerciseNameError extends Error {
+  constructor(name) {
+    super(`Exercise name "${name}" is already used in this chapter.`);
+    this.name = "DuplicateExerciseNameError";
+    this.exerciseName = name;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * #new-exercise-name live validity check (debounced) and the duplicate-row
+ * flash shown at New Exercise click time. See addExercise() below for the
+ * actual duplicate check, which runs against the freshest doc inside the
+ * occ() mutator; this debounced check is just an earlier, best-effort hint.
+ * ------------------------------------------------------------------ */
+let newExerciseNameCheckTimer = null;
+
+function cancelNewExerciseNameCheck() {
+  if (newExerciseNameCheckTimer !== null) {
+    clearTimeout(newExerciseNameCheckTimer);
+    newExerciseNameCheckTimer = null;
+  }
+}
+
+// Trimmed, non-empty match against an existing exercises[] key -> .invalid.
+// Debounced (not per-keystroke) purely to keep typing snappy; the check
+// itself is a single object-key lookup, so correctness never depends on it —
+// the authoritative check is the one inside addExercise()'s occ() mutator.
+function checkNewExerciseNameValidity() {
+  newExerciseNameCheckTimer = null;
+  const trimmed = newExerciseNameInput.value.trim();
+  const dup = !!(trimmed && currentDoc && currentDoc.exercises && currentDoc.exercises[trimmed]);
+  newExerciseNameInput.classList.toggle("invalid", dup);
+}
+
+function onNewExerciseNameInput() {
+  cancelNewExerciseNameCheck();
+  newExerciseNameCheckTimer = setTimeout(checkNewExerciseNameValidity, 200);
+}
+
+// Timers for the 5s duplicate-row highlight, keyed by exercise name, so a
+// repeated duplicate attempt against the SAME row replaces the pending
+// removal instead of stacking (same idiom as restartLastUsedTimer /
+// cancelLastUsedTimer above).
+const rowFlashTimers = new Map();
+
+function flashRow(name) {
+  const row = findRow(name);
+  if (!row) return; // e.g. another tab deleted it; nothing to highlight
+
+  const prior = rowFlashTimers.get(name);
+  if (prior !== undefined) clearTimeout(prior);
+
+  // Force the entrance animation to replay even if it's already mid-flight:
+  // remove the class, force a reflow, then re-add it — re-adding the same
+  // class within the same frame would otherwise be a no-op for @keyframes.
+  row.classList.remove("flash-duplicate");
+  void row.offsetWidth;
+  row.classList.add("flash-duplicate");
+  row.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  rowFlashTimers.set(
+    name,
+    setTimeout(() => {
+      rowFlashTimers.delete(name);
+      const liveRow = findRow(name); // re-look-up: row may be gone by now
+      if (liveRow) liveRow.classList.remove("flash-duplicate");
+    }, 5000)
+  );
+}
+
 async function deleteExercise(name) {
   if (!currentDoc || !currentDoc.randomization) return;
   if (currentDoc.randomization.length <= 1) {
@@ -771,6 +870,7 @@ async function deleteExercise(name) {
   if (row) row.remove();
   updateCounter();
   populateRange(currentDoc.last_range); // blanks + greys the range boxes
+  refreshNewExercisePlaceholder();
 }
 
 async function addExercise() {
@@ -779,18 +879,33 @@ async function addExercise() {
   const key = currentKey();
   if (!key || !triple) return;
 
+  // Trimmed before both the duplicate check and the stored key: a typed name
+  // is the first place stray whitespace can enter (machine-generated names
+  // never carried it), and untrimmed "7 " vs "7" would display identically
+  // as "Exercise 7" while silently failing to dedupe against each other.
+  const typed = newExerciseNameInput.value.trim();
+
   const entry = pushUndo(key, triple);
 
-  // The name is computed INSIDE the mutator: on an OCC retry the fresh doc may
-  // already contain a name this one would have taken (another tab added one),
-  // and a name chosen up front would collide with it. Gap-filling makes that
-  // more likely than plain max+1 did, not less.
+  // The name is resolved INSIDE the mutator: on an OCC retry the fresh doc may
+  // already contain a name this one would have taken (another tab added one,
+  // or a stale currentDoc is behind), and a name chosen up front would
+  // collide with it. This is the same reasoning nextExerciseName's gap-fill
+  // already relies on (invariant 15) — it just now also covers a typed name.
   let addedName = null;
   try {
     await occ(key, (doc) => {
       // Stamp the selection first: nextExerciseName reads the scheme off the doc.
       doc.numbering_system = numberingSystem;
-      addedName = nextExerciseName(doc);
+      const name = typed || nextExerciseName(doc);
+      if (doc.exercises && doc.exercises[name]) {
+        // Abort the transaction cleanly: nothing is persisted (mutateChapter
+        // skips version/updated_at and store.put() on any mutator throw), and
+        // this is not a VersionConflictError, so occ() rethrows it as-is
+        // instead of retrying.
+        throw new DuplicateExerciseNameError(name);
+      }
+      addedName = name;
       ensureExercise(doc, addedName);
       const order = doc.randomization || [];
       doc.randomization = order.includes(addedName)
@@ -801,8 +916,15 @@ async function addExercise() {
       return doc;
     });
   } catch (err) {
-    console.error("Add exercise failed", err);
     popUndo(entry);
+    if (err instanceof DuplicateExerciseNameError) {
+      // Scoped, deliberate exception to the showError()/alert() convention
+      // used everywhere else in the app: inline highlighting only, no alert.
+      newExerciseNameInput.classList.add("invalid");
+      flashRow(err.exerciseName);
+      return;
+    }
+    console.error("Add exercise failed", err);
     showError("Could not add an exercise. Please try again.");
     return;
   }
@@ -811,6 +933,12 @@ async function addExercise() {
   exerciseList.prepend(buildRow(addedName));
   updateCounter();
   populateRange(currentDoc.last_range);
+  // Clear back to empty and refresh the placeholder to the new
+  // nextExerciseName(doc) now that this name is taken.
+  cancelNewExerciseNameCheck();
+  newExerciseNameInput.value = "";
+  newExerciseNameInput.classList.remove("invalid");
+  refreshNewExercisePlaceholder();
 }
 
 // Reorder the list for pruning: unfinished first, finished at the bottom, each
@@ -1727,6 +1855,7 @@ function wireEvents() {
   editListBtn.addEventListener("click", () => setEditMode(!editMode));
   sortBtn.addEventListener("click", onSort);
   newExerciseBtn.addEventListener("click", addExercise);
+  newExerciseNameInput.addEventListener("input", onNewExerciseNameInput);
 }
 
 /* ------------------------------------------------------------------ *
