@@ -354,26 +354,39 @@ textarea:focus-visible {
    Exercise rows — built at runtime by app.js (NOT in the HTML).
    For each exercise app.js creates:
 
-     <div class="exercise-row">
+     <div class="exercise-row" data-focus="normal">
        <input type="checkbox" class="ex-check">          completion toggle
        <span class="ex-name"></span>                     e.g. "Exercise 12"
        <input type="text" class="ex-oneline">            comment (see below)
-       <button type="button" class="ex-details">Expand</button>
-       <button type="button" class="ex-delete">&times;</button>   delete row
+       <button type="button" class="ex-details"></button>     expand icon
+       <button type="button" class="ex-focus"></button>       focus toggle
+       <button type="button" class="ex-delete"></button>      delete row
      </div>
 
-   `.ex-delete` is built on every row but only revealed while
-   #exercise-list carries the `edit-mode` class (toggled by the Edit List
-   button). Keeping it in the DOM means toggling edit mode is a pure CSS
-   change — no re-render, so scroll position and in-progress comment
+   `.ex-details` and `.ex-delete` are icon-only: app.js fills each with an
+   inline SVG (expand arrows / a stroked ×) and carries the text in an
+   aria-label.
+
+   `.ex-focus` and `.ex-delete` are built on every row but only revealed
+   while #exercise-list carries the `edit-mode` class (toggled by the Edit
+   List button). Keeping them in the DOM means toggling edit mode is a pure
+   CSS change — no re-render, so scroll position and in-progress comment
    typing survive the toggle.
+
+   `data-focus` on the row (and on `.ex-focus` itself) is the exercise's
+   practice category: "focused", "normal" or "paused". It accents focused
+   rows down the left edge, strikes through and mutes a paused row's NAME
+   (the row's controls stay at full strength — see the rules below), and
+   lights whichever of the toggle's two icons (bullseye / pause) matches;
+   both stay dim, but still legible, for "normal".
 
    app.js toggles the `.completed` modifier class on `.exercise-row`
    to strike through + dim the name. `.ex-oneline` is directly editable
    when the comment is a single line (or empty); typing there persists via
    the same throttle as the modal. It becomes `[readonly]` (greyed out,
-   click-to-open) once the comment has a second line, since only the
-   modal's textarea can hold multi-line text.
+   click-to-open) only once the comment has a second line with real content
+   on it, since only the modal's textarea can hold multi-line text — a lone
+   trailing newline does not lock it.
    ============================================================ */
 .exercise-row {
   display: flex;
@@ -423,34 +436,42 @@ textarea:focus-visible {
 .ex-oneline[readonly]:empty::before,
 .ex-oneline[readonly][value=""] { font-style: italic; }
 
-.ex-details {
-  flex: 0 0 auto;
-  font: inherit;
-  font-weight: 600;
-  font-size: .9rem;
-  cursor: pointer;
-  padding: .4rem .75rem;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  transition: background-color .12s ease;
+/* The inline SVGs app.js injects into the icon buttons. currentColor means
+   each one simply inherits its button's color in both themes. */
+.icon {
+  display: block;
+  width: 1rem;
+  height: 1rem;
 }
-.ex-details:hover { background: var(--surface-alt); }
+
+/* Icon-only square buttons. Sized from the icon rather than from text, so the
+   row stays compact enough for the focus toggle to fit on a narrow phone. */
+.ex-details,
+.ex-delete {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: .4rem;
+  cursor: pointer;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  transition: background-color .12s ease, color .12s ease;
+}
+
+.ex-details {
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+}
+.ex-details:hover {
+  background: var(--surface-alt);
+  color: var(--text);
+}
 
 .ex-delete {
   display: none; /* revealed by #exercise-list.edit-mode below */
-  flex: 0 0 auto;
-  font: inherit;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-  padding: .4rem .7rem;
   color: var(--danger);
-  background: transparent;
   border: 1px solid var(--danger);
-  border-radius: var(--radius-sm);
-  transition: background-color .12s ease, color .12s ease;
 }
 .ex-delete:hover {
   background: var(--danger);
@@ -458,8 +479,84 @@ textarea:focus-visible {
 }
 #exercise-list.edit-mode .ex-delete { display: inline-flex; }
 
+/* ---- Three-state focus toggle ------------------------------ *
+   One button holding BOTH icons: a bullseye (focused) and a pause bar
+   (paused). data-focus names the current state and lights the matching
+   icon; "normal" leaves both dim, so the control also advertises the two
+   states a press can reach. Used identically on a row (.ex-focus, revealed
+   only in edit mode) and in the modal (.focus-toggle, always visible). */
+.ex-focus,
+.focus-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  /* Same vertical padding as .ex-details above, so the two buttons are exactly
+     the same height and the row's controls line up. */
+  padding: .4rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.ex-focus { display: none; } /* revealed by #exercise-list.edit-mode below */
+#exercise-list.edit-mode .ex-focus { display: inline-flex; }
+
+.ex-focus:hover,
+.focus-toggle:hover { background: var(--surface-alt); }
+
+/* Both icons sit dim until their state is the active one. "Dim" has to stay
+   legible — it is the only hint of what the next press does — so it is a
+   readable grey, not a near-invisible ghost. */
+.focus-icon {
+  display: inline-flex;
+  opacity: .55;
+  transition: opacity .12s ease, color .12s ease;
+}
+.ex-focus:hover .focus-icon,
+.focus-toggle:hover .focus-icon { opacity: .8; }
+
+[data-focus="focused"] > .focus-icon-focused,
+[data-focus="paused"] > .focus-icon-paused {
+  opacity: 1;
+}
+[data-focus="focused"] > .focus-icon-focused { color: var(--primary); }
+[data-focus="paused"] > .focus-icon-paused { color: var(--text); }
+
+.ex-focus[data-focus="focused"],
+.focus-toggle[data-focus="focused"] { border-color: var(--primary); }
+.ex-focus[data-focus="paused"],
+.focus-toggle[data-focus="paused"] { border-color: var(--text-muted); }
+
+/* Row-level treatment, so the three categories are scannable without
+   reading each toggle: focused gets a primary accent down its left edge,
+   paused gets the same struck-through, muted NAME that a completed row has.
+   Deliberately not a blanket `opacity` on the row — that dimmed the toggle
+   itself, which is the one thing on a paused row you still need to see and
+   press to get back out of it. */
+.exercise-row[data-focus="focused"] {
+  border-left: 3px solid var(--primary);
+  padding-left: calc(.7rem - 2px);
+}
+.exercise-row[data-focus="paused"] {
+  background: var(--surface-alt);
+  border-color: var(--border-strong);
+}
+.exercise-row[data-focus="paused"] .ex-name {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+/* Struck through for both reasons at once still reads as one strike. */
+.exercise-row[data-focus="paused"] .ex-oneline:not([readonly]) {
+  color: var(--text-muted);
+}
+
 .ex-details:focus-visible,
 .ex-delete:focus-visible,
+.ex-focus:focus-visible,
+.focus-toggle:focus-visible,
 .ex-check:focus-visible,
 .ex-oneline:focus-visible {
   outline: none;
@@ -533,6 +630,25 @@ textarea:focus-visible {
   height: 1.15rem;
   accent-color: var(--primary);
   cursor: pointer;
+}
+
+/* Practice focus row. app.js appends the same toggle it builds for the rows
+   into #modal-focus-slot, and keeps #modal-focus-label naming the state. */
+.modal-focus {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-bottom: 1rem;
+}
+.modal-focus-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.modal-focus-slot { display: inline-flex; }
+.modal-focus-label {
+  font-size: .9rem;
+  color: var(--text-muted);
 }
 
 .modal-comment-label { display: block; margin-bottom: .35rem; }

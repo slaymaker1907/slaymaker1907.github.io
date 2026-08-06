@@ -24,6 +24,15 @@
 // why no DB_VERSION bump or migration was needed. `last_range` stores 1-based
 // INDEXES rather than spelled names, so it survives a change of system.
 //
+// Each record under `exercises` may also carry `focus`, the exercise's practice
+// category: "focused", "normal" or "paused". It is written only when it is NOT
+// "normal", so it is absent from every record older versions of the app wrote
+// and from every exercise nobody has touched — absent MEANS "normal", which is
+// again why no DB_VERSION bump or migration was needed. The field never changes
+// which exercises are in the list, only the order they come out in: randomize
+// shuffles within each category and concatenates focused -> normal -> paused,
+// and Sort uses the same ranking as its leading key.
+//
 // Optimistic-concurrency (OCC) contract: every document carries a numeric
 // `version`. Writes go through mutateChapter(key, expectedVersion, mutator),
 // which — inside a SINGLE readwrite transaction — reads the current doc, checks

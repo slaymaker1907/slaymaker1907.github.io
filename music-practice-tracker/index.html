@@ -90,13 +90,16 @@
         </div>
       </fieldset>
 
-      <!-- Randomize and Delete no longer confirm; #undo-btn is the safety net
-           for both, which is why it sits here rather than in the list toolbar.
-           It is disabled whenever the undo stack is empty. -->
+      <!-- Randomize, Reset Focus and Delete no longer confirm; #undo-btn is the
+           safety net for all three, which is why it sits here rather than in the
+           list toolbar. It is disabled whenever the undo stack is empty.
+           #reset-focus-btn puts every exercise in the chapter back to normal
+           (clearing both focused and paused) in one undoable write. -->
       <div class="actions">
         <button type="button" id="randomize-btn" class="btn btn-primary">Randomize</button>
         <button type="button" id="clear-btn" class="btn btn-secondary">Reset Form</button>
         <button type="button" id="undo-btn" class="btn btn-secondary" disabled>Undo</button>
+        <button type="button" id="reset-focus-btn" class="btn btn-secondary">Reset Focus</button>
         <button type="button" id="delete-btn" class="btn btn-danger">Delete</button>
       </div>
     </form>
@@ -132,6 +135,17 @@
     <label class="modal-completed">
       <input type="checkbox" id="modal-check"> Completed
     </label>
+
+    <!-- Practice focus. app.js builds the same three-state toggle it puts on
+         each row and appends it into #modal-focus-slot at startup (the icons
+         are inline SVG defined in app.js, so the markup lives there, not here).
+         One press cycles normal -> focused -> paused -> normal; the current
+         state names itself in #modal-focus-label. -->
+    <div class="modal-focus">
+      <span class="modal-focus-title">Practice focus</span>
+      <span id="modal-focus-slot" class="modal-focus-slot"></span>
+      <span id="modal-focus-label" class="modal-focus-label">normal</span>
+    </div>
 
     <label for="modal-comment" class="modal-comment-label">Comment</label>
     <textarea id="modal-comment" rows="8"

@@ -37,6 +37,7 @@ const numberingSelect = document.getElementById("numbering");
 const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
 const deleteBtn = document.getElementById("delete-btn");
+const resetFocusBtn = document.getElementById("reset-focus-btn");
 // Undo lives in the form's action bar, not the list toolbar: it now reverses
 // Randomize and chapter Delete too, so it is not an Edit-List-mode control.
 const undoBtn = document.getElementById("undo-btn");
@@ -51,6 +52,8 @@ const exerciseList = document.getElementById("exercise-list");
 const detailsModal = document.getElementById("details-modal");
 const modalTitle = document.getElementById("modal-title");
 const modalCheck = document.getElementById("modal-check");
+const modalFocusSlot = document.getElementById("modal-focus-slot");
+const modalFocusLabel = document.getElementById("modal-focus-label");
 const modalComment = document.getElementById("modal-comment");
 const modalSave = document.getElementById("modal-save");
 const modalCancel = document.getElementById("modal-cancel");
@@ -65,6 +68,10 @@ let currentDoc = null;
 // used to implement a true Cancel (undo, even of throttle-saved edits).
 let modalName = null;
 let modalSnapshot = null;
+// The modal's copy of the three-state focus toggle. Built once by wireEvents()
+// rather than declared here, because buildFocusToggle() reads the ICONS table,
+// which is initialized further down this module.
+let modalFocusBtn = null;
 
 // Cached chapter list, used to build the datalists synchronously on every
 // keystroke without hitting the DB each time. Refreshed after mutations.
@@ -97,6 +104,13 @@ let undoStack = [];
  * Small pure helpers.
  * ------------------------------------------------------------------ */
 const firstLine = (s) => (s || "").split("\n")[0];
+
+// Does this comment genuinely need the modal's textarea? A newline is only
+// "multi-line" if something non-whitespace follows it, so pressing Enter once at
+// the end of a line — or leaving a trailing blank line behind — does not lock the
+// row's one-line box. Without that tolerance, using the expanded modal at all
+// tended to lock the small bar the user actually wanted to keep typing in.
+const isMultiline = (s) => /\n/.test((s || "").replace(/\s+$/, ""));
 
 // Fisher–Yates shuffle on a COPY (never mutates the input array).
 function shuffle(arr) {
@@ -230,13 +244,69 @@ function activeScheme() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Focus states.
+ *
+ * Every exercise sits in one of three practice categories: "focused" (drill
+ * this), "normal", or "paused" (shelved, but not deleted). The category is a
+ * per-exercise field, `focus`, and it is ABSENT on every document written
+ * before this feature — read it only through focusOf(), which treats absent as
+ * "normal". That absence is why this needed no DB_VERSION bump or migration,
+ * the same trick custom_list and numbering_system already use.
+ *
+ * The category never partitions the exercise SET, only its ORDER: randomization
+ * shuffles within each category and concatenates focused -> normal -> paused,
+ * and Sort uses the same rank as its leading key. Stating that order once, here,
+ * is what stops the two Randomize paths and Sort from drifting apart.
+ * ------------------------------------------------------------------ */
+const DEFAULT_FOCUS = "normal";
+// The cycle a press walks: normal -> focused -> paused -> normal.
+const FOCUS_CYCLE = ["normal", "focused", "paused"];
+// Display/sort order, which is deliberately NOT the cycle order.
+const FOCUS_RANK = { focused: 0, normal: 1, paused: 2 };
+
+function focusOf(doc, name) {
+  const ex = doc && doc.exercises && doc.exercises[name];
+  const value = ex && ex.focus;
+  return FOCUS_RANK[value] !== undefined ? value : DEFAULT_FOCUS;
+}
+
+function nextFocus(state) {
+  const at = FOCUS_CYCLE.indexOf(state);
+  return FOCUS_CYCLE[(at + 1) % FOCUS_CYCLE.length];
+}
+
+function focusRank(doc, name) {
+  return FOCUS_RANK[focusOf(doc, name)];
+}
+
+// Split `names` into the three category buckets, each keeping its input order.
+// Pure: never mutates either argument.
+function partitionByFocus(doc, names) {
+  const buckets = { focused: [], normal: [], paused: [] };
+  for (const name of names) buckets[focusOf(doc, name)].push(name);
+  return buckets;
+}
+
+// The shared randomization order: shuffled inside each category, categories
+// concatenated best-first. Both Randomize paths go through this.
+function shuffleByFocus(doc, names) {
+  const buckets = partitionByFocus(doc, names);
+  return [
+    ...shuffle(buckets.focused),
+    ...shuffle(buckets.normal),
+    ...shuffle(buckets.paused),
+  ];
+}
+
+/* ------------------------------------------------------------------ *
  * Sort order.
  *
  * The stored order is a practice shuffle, which makes finding one specific
  * exercise (to tick off, or to delete once it is finished) a linear scan. Sort
- * rewrites it into the order you actually prune in: still-unfinished exercises
- * first, finished ones pushed to the bottom, each group climbing by exercise
- * number.
+ * rewrites it into the order you actually prune in: focus category first
+ * (focused, then normal, then paused — the same ranking randomization uses), then
+ * still-unfinished exercises before finished ones, each group climbing by
+ * exercise number.
  *
  * "By number" means by the 1-based INDEX the chapter's numbering system parses
  * out of the name, never by the spelling — that is what puts `z` (26) before
@@ -249,6 +319,7 @@ function sortKey(doc, name) {
   const ex = doc && doc.exercises && doc.exercises[name];
   const index = schemeOf(doc).parse(name);
   return {
+    rank: focusRank(doc, name),
     done: !!(ex && ex.completed),
     index: index !== null && index >= 1 ? index : null,
     name,
@@ -256,6 +327,8 @@ function sortKey(doc, name) {
 }
 
 function compareSortKeys(a, b) {
+  // Focus category outranks everything: focused block, then normal, then paused.
+  if (a.rank !== b.rank) return a.rank - b.rank;
   // Unfinished work first; everything already done sinks to the bottom.
   if (a.done !== b.done) return a.done ? 1 : -1;
   // Within a group, unparseable names trail the numbered ones.
@@ -509,6 +582,85 @@ async function refreshDatalists() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Inline SVG icons.
+ *
+ * All four are 16x16, stroked or filled with `currentColor`, so the existing
+ * theme tokens (and the .ex-delete danger color) drive them in light and dark
+ * with no extra rules. They are literal strings defined here and are the ONLY
+ * thing ever assigned to innerHTML in this file — never user content.
+ * ------------------------------------------------------------------ */
+const SVG_OPEN =
+  '<svg class="icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"';
+
+const ICONS = {
+  // Delete row: a clean two-stroke ×, round-capped so it reads as drawn rather
+  // than as the "×" character the button used to hold.
+  close:
+    `${SVG_OPEN} fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">` +
+    '<path d="M4 4l8 8M12 4l-8 8"/></svg>',
+  // Expand: arrows pushing out to opposite corners of the box.
+  expand:
+    `${SVG_OPEN} fill="none" stroke="currentColor" stroke-width="1.7" ` +
+    'stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M9.5 2.5H13.5V6.5M6.5 13.5H2.5V9.5M13.5 2.5L9 7M2.5 13.5L7 9"/></svg>',
+  // Focused: a bullseye drawn as a reticle — a ring, a solid center, and four
+  // crosshair ticks crossing it. The ticks are what make it read as "target" at
+  // 16px; two plain concentric rings alone looked like a dot in a circle.
+  bullseye:
+    `${SVG_OPEN} fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">` +
+    '<circle cx="8" cy="8" r="5.5"/>' +
+    '<path d="M8 .9V4.4M8 11.6V15.1M.9 8H4.4M11.6 8H15.1"/>' +
+    '<circle cx="8" cy="8" r="1.9" fill="currentColor" stroke="none"/></svg>',
+  // Paused: the standard two-bar pause glyph.
+  pause:
+    `${SVG_OPEN} fill="currentColor">` +
+    '<rect x="4" y="3" width="3" height="10" rx="1"/>' +
+    '<rect x="9" y="3" width="3" height="10" rx="1"/></svg>',
+};
+
+// The three-state toggle, used identically on a row and in the modal: one
+// button holding BOTH icons, with CSS lighting whichever one the current
+// data-focus names (and dimming both for "normal").
+function buildFocusToggle(className) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = className;
+  btn.innerHTML =
+    `<span class="focus-icon focus-icon-focused">${ICONS.bullseye}</span>` +
+    `<span class="focus-icon focus-icon-paused">${ICONS.pause}</span>`;
+  return btn;
+}
+
+const FOCUS_LABEL = {
+  normal: "normal",
+  focused: "focused",
+  paused: "paused",
+};
+
+// One place sets every surface that shows a focus state: the row (whose
+// data-focus drives both the lit icon and the row-level dim/accent) and, when
+// the modal is on that exercise, the modal's copy of the toggle.
+function syncRowFocus(name) {
+  const state = focusOf(currentDoc, name);
+  const row = findRow(name);
+  if (row) {
+    row.dataset.focus = state;
+    const btn = row.querySelector(".ex-focus");
+    if (btn) {
+      btn.dataset.focus = state;
+      btn.setAttribute(
+        "aria-label",
+        `Exercise ${name} is ${FOCUS_LABEL[state]}; change practice focus`
+      );
+    }
+  }
+  if (detailsModal.open && modalName === name) {
+    modalFocusBtn.dataset.focus = state;
+    modalFocusLabel.textContent = FOCUS_LABEL[state];
+  }
+}
+
+/* ------------------------------------------------------------------ *
  * Rendering.
  * ------------------------------------------------------------------ */
 function clearExerciseList() {
@@ -519,17 +671,26 @@ function clearCounter() {
   progressCounter.textContent = "";
 }
 
+// Paused exercises are shelved, so they count towards neither side of the
+// progress fraction. The trailing "N paused" is what keeps that honest: without
+// it, "3 of 8 complete" silently contradicts a visible list of eleven rows.
 function updateCounter() {
   let total = 0;
   let done = 0;
+  let paused = 0;
   if (currentDoc && currentDoc.randomization) {
-    total = currentDoc.randomization.length;
     for (const name of currentDoc.randomization) {
+      if (focusOf(currentDoc, name) === "paused") {
+        paused++;
+        continue;
+      }
+      total++;
       const ex = currentDoc.exercises[name];
       if (ex && ex.completed) done++;
     }
   }
-  progressCounter.textContent = `${done} of ${total} complete`;
+  progressCounter.textContent =
+    `${done} of ${total} complete` + (paused > 0 ? ` · ${paused} paused` : "");
 }
 
 // Point #min/#max at the active scheme: the letter schemes take text, numbers
@@ -629,6 +790,9 @@ function buildRow(name) {
   const row = document.createElement("div");
   row.className = "exercise-row" + (ex.completed ? " completed" : "");
   row.dataset.name = name;
+  // Drives the paused dimming / focused accent; the toggle's own lit icon is
+  // keyed off its matching data-focus, set by syncRowFocus below.
+  row.dataset.focus = focusOf(currentDoc, name);
 
   const check = document.createElement("input");
   check.type = "checkbox";
@@ -643,8 +807,7 @@ function buildRow(name) {
   const oneline = document.createElement("input");
   oneline.type = "text";
   oneline.className = "ex-oneline";
-  const multiline = (ex.comment || "").includes("\n");
-  oneline.readOnly = multiline;
+  oneline.readOnly = isMultiline(ex.comment);
   oneline.value = firstLine(ex.comment);
   // Locked (multi-line) rows open the modal on click; unlocked rows are
   // directly editable, so a click just focuses the box like any text input.
@@ -663,23 +826,34 @@ function buildRow(name) {
     scheduleCommentPersist(name);
   });
 
+  // Icon-only: the glyph is the label, and the aria-label carries the name.
   const details = document.createElement("button");
   details.type = "button";
   details.className = "ex-details";
-  details.textContent = "Expand";
+  details.innerHTML = ICONS.expand;
   details.setAttribute("aria-label", "Expand exercise " + name);
   details.addEventListener("click", () => openModal(name));
 
-  // Built on every row but hidden by CSS unless #exercise-list has .edit-mode,
-  // so toggling Edit List never re-renders (and never interrupts typing).
+  // Focus toggle and delete are both built on every row but hidden by CSS
+  // unless #exercise-list has .edit-mode, so toggling Edit List never
+  // re-renders (and never interrupts typing).
+  const focus = buildFocusToggle("ex-focus");
+  focus.addEventListener("click", () => cycleFocus(name));
+
   const del = document.createElement("button");
   del.type = "button";
   del.className = "ex-delete";
-  del.textContent = "×";
+  del.innerHTML = ICONS.close;
   del.setAttribute("aria-label", "Delete exercise " + name);
   del.addEventListener("click", () => deleteExercise(name));
 
-  row.append(check, nameSpan, oneline, details, del);
+  row.append(check, nameSpan, oneline, details, focus, del);
+  // Stamps the toggle's data-focus + aria-label from the row it now lives in.
+  focus.dataset.focus = row.dataset.focus;
+  focus.setAttribute(
+    "aria-label",
+    `Exercise ${name} is ${FOCUS_LABEL[row.dataset.focus]}; change practice focus`
+  );
   return row;
 }
 
@@ -719,15 +893,19 @@ function updateRowCompleted(name) {
   if (check) check.checked = done;
 }
 
-// Refresh a single row's one-line comment preview from currentDoc.
+// Refresh a single row's one-line comment preview from currentDoc. Called live
+// while the modal types, so the small bar mirrors the textarea and unlocks or
+// relocks the moment the content crosses the single-line boundary.
 function refreshRowPreview(name) {
   const row = findRow(name);
   if (!row) return;
   const oneline = row.querySelector(".ex-oneline");
   if (!oneline) return;
   const comment = (currentDoc && currentDoc.exercises[name] && currentDoc.exercises[name].comment) || "";
-  oneline.readOnly = comment.includes("\n");
-  oneline.value = firstLine(comment);
+  oneline.readOnly = isMultiline(comment);
+  // Never write .value into the box the user is typing in: assigning it would
+  // jump the caret to the end mid-word.
+  if (oneline !== document.activeElement) oneline.value = firstLine(comment);
 }
 
 /* ------------------------------------------------------------------ *
@@ -1319,6 +1497,12 @@ async function onRandomize() {
           completed_at: null,
           comment: prev ? prev.comment || "" : "",
         };
+        // Focus carries over on exactly the same terms as the comment: kept for
+        // names present in both ranges, gone with anything dropped. Written only
+        // when it is not the default, so a chapter nobody has focused stays
+        // byte-identical to what earlier versions of the app wrote.
+        const focus = prev ? focusOf(doc, nm) : DEFAULT_FOCUS;
+        if (focus !== DEFAULT_FOCUS) newExercises[nm].focus = focus;
       }
       doc.exercises = newExercises;
       // last_range holds indexes, not labels, so it stays meaningful if the
@@ -1327,7 +1511,9 @@ async function onRandomize() {
       doc.numbering_system = numberingSystem;
       // Rebuilding from a range is exactly what un-customizes a chapter.
       doc.custom_list = false;
-      doc.randomization = shuffle(names);
+      // Shuffled within each focus category, focused block first. Read off the
+      // doc AFTER newExercises lands, so it sees the carried-over states.
+      doc.randomization = shuffleByFocus(doc, names);
       doc.randomized_at = Date.now();
       doc.use_count = (doc.use_count || 0) + 1;
       doc.last_used_at = Date.now();
@@ -1348,8 +1534,9 @@ async function onRandomize() {
 /* ------------------------------------------------------------------ *
  * Randomize for a custom list: reshuffle the exercises that are already
  * there. min/max are ignored entirely — nothing is added, nothing is
- * dropped, and every comment is left exactly as it was. Completion state
- * still resets chapter-wide, matching the contiguous path.
+ * dropped, and every comment and focus state is left exactly as it was.
+ * Completion state still resets chapter-wide, matching the contiguous path,
+ * and the new order is grouped by focus exactly as the contiguous path's is.
  * ------------------------------------------------------------------ */
 async function reshuffleCustomList(triple) {
   flushComment(); // land any in-flight note edit before we rewrite the doc
@@ -1369,9 +1556,9 @@ async function reshuffleCustomList(triple) {
         ensureExercise(doc, nm);
         doc.exercises[nm].completed = false;
         doc.exercises[nm].completed_at = null;
-        // comment deliberately untouched
+        // comment and focus deliberately untouched
       }
-      doc.randomization = shuffle(names);
+      doc.randomization = shuffleByFocus(doc, names);
       doc.randomized_at = Date.now();
       doc.use_count = (doc.use_count || 0) + 1;
       doc.last_used_at = Date.now();
@@ -1467,6 +1654,107 @@ async function toggleCompleted(name, checked) {
     console.error("Toggle failed", err);
     renderList(); // fall back to a full re-render from whatever we have
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Focus toggle (row or modal). Like the checkbox and unlike Sort, this is
+ * deliberately NOT pushed onto the undo stack: it is a single visible click
+ * that the same click cycles back out of, and stacking it would push the
+ * genuinely destructive actions off the capped stack. Reset Focus, which
+ * rewrites every exercise at once, IS undoable. Never touches last_used_at.
+ *
+ * The writes are SERIALIZED through one chain. A press is a single click on a
+ * cycling button, so bursts are normal — three presses to walk back to normal,
+ * or a sweep down the list — and firing them concurrently means every write
+ * after the first opens against a stale version. occ() retries a conflict only
+ * once, so the third overlapping write in a burst loses outright and the row
+ * silently snaps back. Queuing costs nothing here (each write is tiny and the
+ * UI already updated optimistically) and removes the self-collision entirely;
+ * occ()'s retry is left to do its real job, which is other tabs.
+ * ------------------------------------------------------------------ */
+let focusWriteChain = Promise.resolve();
+
+function queueFocusWrite(run) {
+  const next = focusWriteChain.then(run, run);
+  // The chain itself must never stay rejected, or every later write inherits
+  // the failure; callers get the real promise back and handle their own errors.
+  focusWriteChain = next.catch(() => {});
+  return next;
+}
+
+async function setFocus(name, state) {
+  const triple = readTriple();
+  if (!triple || !currentDoc) return;
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+
+  // Update memory and the UI BEFORE awaiting the write, the way comment typing
+  // does. Two quick presses would otherwise both read the pre-write state off
+  // currentDoc and resolve to the same next state, so the second press would
+  // look like it did nothing.
+  const previous = focusOf(currentDoc, name);
+  ensureExerciseCurrent(name);
+  currentDoc.exercises[name].focus = state;
+  syncRowFocus(name);
+  updateCounter();
+
+  try {
+    await queueFocusWrite(() =>
+      occ(key, (doc) => {
+        doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
+        ensureExercise(doc, name);
+        doc.exercises[name].focus = state;
+        return doc;
+      })
+    );
+    syncRowFocus(name);
+    updateCounter();
+  } catch (err) {
+    console.error("Focus change failed", err);
+    if (currentDoc && currentDoc.exercises && currentDoc.exercises[name]) {
+      currentDoc.exercises[name].focus = previous;
+    }
+    renderList();
+  }
+}
+
+function cycleFocus(name) {
+  setFocus(name, nextFocus(focusOf(currentDoc, name)));
+}
+
+// Put the whole chapter back to normal in one write. Destructive across every
+// exercise at once, so — like Sort, Randomize and chapter Delete — it does not
+// confirm and is undoable instead.
+async function onResetFocus() {
+  const triple = readTriple();
+  if (!triple) {
+    showError("Please fill in instrument, book, and chapter.");
+    return;
+  }
+  if (!currentDoc || !tripleEq(currentDoc, triple)) {
+    showError("No saved entry for this chapter.");
+    return;
+  }
+
+  const key = chapterKey(triple.instrument, triple.book, triple.chapter);
+  const entry = pushUndo(key, triple);
+
+  try {
+    await occ(key, (doc) => {
+      // Delete rather than write "normal": absent IS normal (see focusOf), and
+      // leaving the field off keeps a never-focused chapter byte-identical to
+      // what older versions of the app wrote.
+      for (const ex of Object.values(doc.exercises || {})) delete ex.focus;
+      return doc;
+    });
+  } catch (err) {
+    console.error("Reset focus failed", err);
+    popUndo(entry);
+    showError("Could not reset focus. Please try again.");
+    return;
+  }
+
+  entry.after = structuredClone(currentDoc);
+  renderList();
 }
 
 /* ------------------------------------------------------------------ *
@@ -1597,15 +1885,19 @@ function openModal(name) {
   modalName = name;
   const ex = currentDoc.exercises[name];
   // Snapshot for a true Cancel/undo.
+  // `focus` belongs here because revertModal() writes this snapshot back as the
+  // WHOLE record: anything missing from it would be erased by a Cancel/Esc.
   modalSnapshot = {
     completed: !!ex.completed,
     completed_at: ex.completed_at != null ? ex.completed_at : null,
     comment: ex.comment || "",
+    focus: focusOf(currentDoc, name),
   };
   modalTitle.textContent = "Exercise " + name;
   modalCheck.checked = !!ex.completed;
   modalComment.value = ex.comment || "";
   if (!detailsModal.open) detailsModal.showModal();
+  syncRowFocus(name); // now that the modal is open, stamp its toggle too
 }
 
 // Revert the edited exercise to its on-open snapshot (in memory) and persist
@@ -1628,16 +1920,21 @@ function revertModal() {
     .then(() => {
       refreshRowPreview(name);
       updateRowCompleted(name);
+      syncRowFocus(name);
       updateCounter();
     })
     .catch((err) => console.error("Cancel revert failed", err));
 }
 
 // Comment typing: update memory synchronously, then schedule a throttled write.
+// The row preview refreshes on every keystroke rather than only on Save, so the
+// small bar stays a live mirror of the textarea — and stays editable — for as
+// long as the note is still a single line.
 modalComment.addEventListener("input", () => {
   if (modalName === null || !currentDoc) return;
   ensureExerciseCurrent(modalName);
   currentDoc.exercises[modalName].comment = modalComment.value;
+  refreshRowPreview(modalName);
   scheduleCommentPersist(modalName);
 });
 
@@ -1835,6 +2132,17 @@ async function onNumberingChanged() {
 }
 
 function wireEvents() {
+  // The modal's focus toggle is the same control the rows use, dropped into the
+  // slot index.html reserves for it. Built here (not at module scope) so it runs
+  // after the ICONS table is initialized.
+  modalFocusBtn = buildFocusToggle("focus-toggle");
+  modalFocusBtn.dataset.focus = DEFAULT_FOCUS;
+  modalFocusBtn.setAttribute("aria-label", "Change practice focus");
+  modalFocusBtn.addEventListener("click", () => {
+    if (modalName !== null) cycleFocus(modalName);
+  });
+  modalFocusSlot.appendChild(modalFocusBtn);
+
   for (const level of ["instrument", "book", "chapter"]) {
     const el = level === "instrument" ? instrumentInput : level === "book" ? bookInput : chapterInput;
     el.addEventListener("input", () => onFieldChanged(level));
@@ -1851,6 +2159,7 @@ function wireEvents() {
   randomizeBtn.addEventListener("click", onRandomize);
   clearBtn.addEventListener("click", onClearForm);
   deleteBtn.addEventListener("click", onDeleteChapter);
+  resetFocusBtn.addEventListener("click", onResetFocus);
   undoBtn.addEventListener("click", undoLast);
   editListBtn.addEventListener("click", () => setEditMode(!editMode));
   sortBtn.addEventListener("click", onSort);

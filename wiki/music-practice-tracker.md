@@ -50,7 +50,7 @@ cross-document relations — a chapter is the unit of read and write.
 | `randomized_at` | number \| null | When `randomization` was last set. |
 | `custom_list` | boolean | `true` once the user has hand-added or hand-deleted an exercise. Switches the chapter off the min/max range system (see *Custom lists* below). Absent on documents written before this field existed, so read it as `!!doc.custom_list` — absent means contiguous, which is why it needed no schema migration. |
 | `numbering_system` | string | How new exercise names are spelled: `"numbers"`, `"letters-upper"`, `"letters-lower"`, or `"roman"`. Absent on documents written before this field existed (and any unrecognized value) reads as `"numbers"`, so it needed no schema migration. See *Numbering systems* below. |
-| `exercises` | object (name → `{completed, completed_at, comment}`) | Per-exercise progress. The key doubles as the display name and supports non-numeric identifiers with no migration — which is exactly what the letter and Roman numbering systems use. |
+| `exercises` | object (name → `{completed, completed_at, comment, focus?}`) | Per-exercise progress. The key doubles as the display name and supports non-numeric identifiers with no migration — which is exactly what the letter and Roman numbering systems use. `focus` is `"focused"`, `"normal"` or `"paused"` and is **omitted whenever it is `"normal"`**, so it is absent from every pre-feature document and needed no schema migration. See *Practice focus* below. |
 | `updated_at` | epoch ms | Last write. |
 
 ## Concurrency
@@ -97,33 +97,66 @@ across several rows would silently drop notes.
   both reset `completed`/`completed_at` chapter-wide and bump `last_used_at`/`use_count`
   immediately. No confirmation dialog: **Undo** is the safety net for this and every
   other destructive action, and the app has no `window.confirm` calls left.
+  Both shuffle **within each focus category** and lay the categories out focused → normal
+  → paused (see *Practice focus* below).
   - *Range-driven* (the default): `exercises` is rebuilt to contain only the new range's
-    names, dropping anything outside it; `comment` carries over for exercise names that
-    were already present (i.e. overlap the old range). Sets `last_range`, clears
-    `custom_list`.
+    names, dropping anything outside it; `comment` and `focus` carry over for exercise
+    names that were already present (i.e. overlap the old range). Sets `last_range`,
+    clears `custom_list`.
   - *Custom list*: shuffles the exercises already there. min/max are ignored, nothing is
-    added or removed, and every comment is left untouched.
+    added or removed, and every comment and focus state is left untouched.
 - **Reset Form** (button id `clear-btn`) — a UI-only reset; it deletes nothing.
 - **Undo** — reverses the last destructive action. See *Undo* below.
+- **Reset Focus** (button id `reset-focus-btn`) — puts every exercise in the chapter back
+  to normal in one write. Undoable and, like everything else here, unconfirmed.
 - **Delete** — deletes the chapter document via `deleteChapter` and resets the form like
   Reset Form. Undoable, which is why it no longer confirms; but the undo history lives in
   memory, so a reload between the delete and the undo does make it permanent.
 - **Exercise rows** — each row is a completion checkbox + a one-line comment box + an
-  **Expand** button. The comment box is directly editable when the comment is a single
-  line (or empty) — typed edits go through the same 250ms throttle as the modal. Once
-  a comment has a second line, the box locks (`readonly`, greyed out) and clicking it
-  (or Expand) opens the `<dialog>` multi-line comment editor instead.
+  **expand** icon button, and in Edit List mode also a **focus toggle** and a delete ×.
+  The comment box is directly editable when the comment is a single line (or empty) —
+  typed edits go through the same 250ms throttle as the modal, and the box mirrors the
+  modal's textarea live while that is open. It locks (`readonly`, greyed out) only once
+  the comment has a *second line with real content on it*; a trailing newline does not
+  count. While locked, clicking it (or the expand button, always) opens the `<dialog>`
+  multi-line comment editor instead.
 - **Edit List** — toggles edit mode for the list. The button names the action it will
   perform, so it reads "Edit List" when off and **"Exit Edit"** while editing, and fills
   in with the accent color while active. See *Custom lists* below.
 - **Sort** — reorders the list for pruning. See *Sorting* below.
 
+## Practice focus
+
+Every exercise sits in one of three categories: **focused** (drilling this now),
+**normal**, or **paused** (shelved, but deliberately not deleted). The category is stored
+per exercise as `focus`, and absent means normal.
+
+It is an ordering hint, never a filter — nothing is hidden or skipped because it is
+paused:
+
+- **Randomize** shuffles inside each category and concatenates focused → normal → paused,
+  so the work you care about lands at the top of the list and the shelved work at the
+  bottom. Both Randomize paths do this.
+- **Sort** uses the same ranking as its leading key, ahead of completion and number.
+- **The progress counter** is the one place the set shrinks: paused exercises count
+  towards neither side of the fraction, and the trailing `· N paused` says so, e.g.
+  `3 of 8 complete · 3 paused`.
+
+The toggle is one button carrying both a bullseye (focused) and a pause bar (paused);
+whichever matches the current state lights up, and both sit dim for normal. One press
+cycles **normal → focused → paused → normal**. It appears on each row in Edit List mode
+and in the expanded details modal, and the row itself is accented when focused and dimmed
+when paused. Unlike Sort or Randomize the toggle is *not* pushed onto the undo stack — it
+is treated like the completion checkbox, since pressing it again walks back out. **Reset
+Focus** in the header, which rewrites the whole chapter at once, is undoable.
+
 ## Sorting
 
 The stored order is a practice shuffle, which makes finding one specific exercise — to
 tick off, or to delete once it is finished — a linear scan. **Sort** rewrites it into the
-order you actually prune in: still-unfinished exercises first, finished ones pushed to
-the bottom, each group climbing by exercise number.
+order you actually prune in: focus category first (focused, then normal, then paused —
+the same ranking Randomize uses), then still-unfinished exercises before finished ones,
+each group climbing by exercise number.
 
 "By number" means by the 1-based **index** the chapter's numbering system parses out of
 the name, never by the spelling. That is what puts `z` (26) before `aa` (27) and `IX` (9)
@@ -131,15 +164,16 @@ before `X` (10), where a plain string compare gets both backwards. A list may le
 hold names minted under an older system that the current one cannot read; those have no
 index to sort by, so they settle at the end of their group in alphabetical order.
 
-Sort changes **only** the order. Completion state, notes, `custom_list`, `last_range`, and
-the recency counters are all left alone, and the new order is saved — it survives a
+Sort changes **only** the order. Completion state, notes, focus states, `custom_list`,
+`last_range`, and the recency counters are all left alone, and the new order is saved — it survives a
 reload. It is undoable, and unlike Edit List's controls it is always available.
 
 ## Undo
 
 **Undo** reverses the last destructive action: Sort, either Randomize path, adding or
-deleting an exercise, a change of numbering system, and chapter Delete. It replaced every
-confirmation dialog in the app.
+deleting an exercise, a change of numbering system, Reset Focus, and chapter Delete. It
+replaced every confirmation dialog in the app. The per-exercise focus toggle is
+deliberately outside it, like the completion checkbox.
 
 Each action snapshots the **whole chapter document** before it writes, rather than
 describing its own inverse — Randomize has no inverse expressible as a delta, and every

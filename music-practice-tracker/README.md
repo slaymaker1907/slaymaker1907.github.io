@@ -7,10 +7,13 @@ Two things the range does not have to dictate:
 - **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems double up after `z` (`aa`, `bb`, `cc`). Switching systems renumbers the chapter you are on, carrying every checkbox and note across.
 - **Hand-edited lists** — **Edit List** turns on edit mode, where you can delete individual exercises with the × and add one with **New Exercise** (which reuses the lowest gap before extending past the end). A hand-edited chapter stops being governed by min/max; filling both boxes in and pressing Randomize is the way back to a contiguous range.
 
-Two buttons make a day's practice easier to work through:
+Not every exercise deserves equal time, so each one carries a **practice focus**: one press of the toggle (on a row in **Edit List** mode, or in the expanded view) cycles it from normal to **focused** — a bullseye — to **paused** — a pause bar — and back. Randomize then shuffles within each group and deals them out focused first, normal next, paused last, so what you are drilling lands at the top of the list and what you have shelved sinks to the bottom without being deleted. Paused exercises drop out of the progress count, which says how many it set aside. **Reset Focus** puts the whole chapter back to normal.
 
-- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: still-unfinished exercises first, finished ones at the bottom, each group climbing by exercise number (so `z` before `aa`, and `IX` before `X`).
-- **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
+Three buttons make a day's practice easier to work through:
+
+- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: focused exercises first and paused ones last, then still-unfinished before finished, each group climbing by exercise number (so `z` before `aa`, and `IX` before `X`).
+- **Reset Focus** — clears every focused and paused mark in the chapter at once.
+- **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, Reset Focus, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
 
 ## Run locally
 
@@ -37,7 +40,7 @@ There is **no build step and no dependencies** — the files are served exactly 
 
 All state persists in IndexedDB under a database named `music-practice-tracker-<guid>`, as one self-contained document per (instrument, book, chapter).
 
-Re-randomizing a chapter always clears every completion checkbox — that is the point of it. Your notes are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes go with them. Re-randomizing a hand-edited list keeps every exercise and note as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
+Re-randomizing a chapter always clears every completion checkbox — that is the point of it. Your notes and focus marks are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes and marks go with them. Re-randomizing a hand-edited list keeps every exercise, note, and mark as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
 
 **Reset Form** just clears the form — it deletes nothing, and retyping the same instrument/book/chapter loads the saved chapter straight back. **Delete** removes the saved chapter; Undo brings it back (and takes you to it), as long as you have not reloaded the page in between.
 
