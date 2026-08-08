@@ -20,7 +20,7 @@ Other directories, for orientation: `dice-roller/`, `password/`, `optimal-timer/
 Longer-form reference docs live in `wiki/`:
 
 - `wiki/README.md` — index of the wiki.
-- `wiki/music-practice-tracker.md` — data model, IndexedDB/GUID rules, concurrency, and UI flow for the music-practice-tracker app.
+- `wiki/music-practice-tracker.md` — data model, IndexedDB/GUID rules, concurrency, the export/import file format, and UI flow for the music-practice-tracker app.
 
 Agent-facing deep docs for the actively-developed apps live in `for_claude/` — `for_claude/d4cubeoptim.md` and `for_claude/music-practice-tracker.md`. Read the relevant one before touching that directory.
 

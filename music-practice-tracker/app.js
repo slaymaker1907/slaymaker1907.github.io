@@ -7,6 +7,8 @@
 // last-write-wins with no user-facing errors.
 
 import {
+  APP_GUID,
+  DB_VERSION,
   chapterKey,
   newChapterDoc,
   openDb,
@@ -17,6 +19,7 @@ import {
   mutateChapter,
   deleteChapter,
   restoreChapter,
+  replaceAllChapters,
 } from "./db.js";
 
 /* ------------------------------------------------------------------ *
@@ -48,6 +51,14 @@ const sortBtn = document.getElementById("sort-btn");
 const newExerciseBtn = document.getElementById("new-exercise-btn");
 const newExerciseNameInput = document.getElementById("new-exercise-name");
 const exerciseList = document.getElementById("exercise-list");
+
+// Data panel (export / import). #import-file is visually hidden and clicked by
+// #import-btn, so the visible control is a .btn like everything else.
+const exportBtn = document.getElementById("export-btn");
+const importBtn = document.getElementById("import-btn");
+const importFileInput = document.getElementById("import-file");
+const undoImportBtn = document.getElementById("undo-import-btn");
+const dataStatus = document.getElementById("data-status");
 
 const detailsModal = document.getElementById("details-modal");
 const modalTitle = document.getElementById("modal-title");
@@ -99,6 +110,16 @@ let editMode = false;
 // session cannot grow it without bound.
 const UNDO_LIMIT = 20;
 let undoStack = [];
+
+// The whole-database snapshot Import takes before it overwrites, and the only
+// thing #undo-import-btn can restore. null means "no import this session".
+//
+// This is deliberately NOT an entry on undoStack. That stack is per-chapter —
+// its entries carry a key, a triple, and two document clones merged by
+// mergeRestore — and a whole-store replace has no representation there. It is
+// also in-memory only, exactly like undoStack, so a reload makes an import
+// permanent.
+let importBackup = null;
 
 /* ------------------------------------------------------------------ *
  * Small pure helpers.
@@ -1334,6 +1355,273 @@ async function undoLast() {
 }
 
 /* ------------------------------------------------------------------ *
+ * Export / import.
+ *
+ * IndexedDB is per-origin AND per-device, so a phone, a tablet and a laptop
+ * each hold an independent database. These two operations are the manual sync
+ * between them: Export writes the WHOLE store to one JSON file, and Import
+ * REPLACES the whole store with one. There is no merge — whichever device you
+ * export from is the one that wins, and a chapter deleted there disappears here.
+ *
+ * Import is destructive and cannot be expressed on the per-chapter undo stack
+ * (see importBackup), so its guard is a whole-database snapshot taken just
+ * before the write plus the #undo-import-btn that restores it. Consistent with
+ * the rest of the app, neither operation confirms.
+ * ------------------------------------------------------------------ */
+const EXPORT_FORMAT = "music-practice-tracker-export";
+const EXPORT_FORMAT_VERSION = 1;
+
+// Pure: wraps the raw documents in an envelope that identifies what they are.
+// The documents go in verbatim, `version` included, so an import restores the
+// exact OCC baselines the exporting device had.
+function buildExportPayload(docs, now) {
+  return {
+    format: EXPORT_FORMAT,
+    format_version: EXPORT_FORMAT_VERSION,
+    app_guid: APP_GUID,
+    db_version: DB_VERSION,
+    exported_at: now,
+    chapters: docs,
+  };
+}
+
+// Pure: returns the chapter array, or throws an Error whose message is meant to
+// be shown to the user. Every check exists to keep a wrong file from wiping the
+// database, so this runs to completion BEFORE anything is written.
+//
+// The db_version check is deliberately one-sided. A file from a NEWER app could
+// hold a shape this build cannot read, and importing it would look like data
+// corruption, so it is refused. A file from an OLDER app is fine: every optional
+// field in this schema is defined so that absent means the default
+// (`custom_list` absent = contiguous, `numbering_system` absent = numbers,
+// `focus` absent = normal), which is exactly what an older export looks like.
+function parseImportPayload(text) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error("That file is not valid JSON. Pick a file exported by this app.");
+  }
+
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("That file is not a Music Practice Tracker export.");
+  }
+  if (data.format !== EXPORT_FORMAT) {
+    throw new Error("That file is not a Music Practice Tracker export.");
+  }
+  // Permanent and hardcoded, so this can only fail on a file from another app
+  // that happens to share the format string — but it is one comparison.
+  if (data.app_guid !== APP_GUID) {
+    throw new Error("That export belongs to a different app database.");
+  }
+  if (typeof data.db_version === "number" && data.db_version > DB_VERSION) {
+    throw new Error(
+      `That file was exported by a newer version of this app (database v${data.db_version}; ` +
+        `this device reads v${DB_VERSION}). Reload this page to update, then try again.`
+    );
+  }
+  if (!Array.isArray(data.chapters)) {
+    throw new Error("That export is missing its chapter list.");
+  }
+
+  for (const doc of data.chapters) {
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
+      throw new Error("That export contains a chapter that is not a record.");
+    }
+    // The composite keyPath is [instrument, book, chapter]; a non-string here
+    // would make store.put() throw mid-transaction and abort the import.
+    if (
+      typeof doc.instrument !== "string" ||
+      typeof doc.book !== "string" ||
+      typeof doc.chapter !== "string"
+    ) {
+      throw new Error("That export contains a chapter with a malformed key.");
+    }
+    if (!doc.exercises || typeof doc.exercises !== "object") {
+      throw new Error(
+        `That export's "${doc.instrument} / ${doc.book} / ${doc.chapter}" has no exercise data.`
+      );
+    }
+  }
+
+  return data.chapters;
+}
+
+// Success feedback for the data panel. Errors keep going through showError()
+// (an alert), because they need to interrupt.
+function setDataStatus(msg) {
+  dataStatus.textContent = msg || "";
+}
+
+function refreshUndoImportBtn() {
+  undoImportBtn.disabled = importBackup === null;
+}
+
+// Hand the file to the OS. On iOS/iPadOS the share sheet is the only convenient
+// way to get a file to another device (AirDrop, Messages, Files); everywhere
+// else — and whenever the share is cancelled or unsupported — fall back to a
+// plain download, the same Blob + <a download> dance d4cubeoptim uses.
+async function shareOrDownload(filename, json) {
+  const blob = new Blob([json], { type: "application/json" });
+
+  try {
+    const file = new File([blob], filename, { type: "application/json" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename });
+      return "shared";
+    }
+  } catch (err) {
+    // AbortError = the user dismissed the sheet; they chose not to export, so
+    // do not then shove a download at them.
+    if (err && err.name === "AbortError") return "cancelled";
+    console.error("Share failed; falling back to download", err);
+  }
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  return "downloaded";
+}
+
+async function onExport() {
+  // A note typed in the last 250ms is still behind the throttle and would be
+  // missing from the file, so land it first and wait for it to settle.
+  flushComment();
+  await drainCommentWrites();
+
+  let docs;
+  try {
+    docs = await listChapters();
+  } catch (err) {
+    console.error("Export failed", err);
+    showError("Could not read the database to export it. Please try again.");
+    return;
+  }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const json = JSON.stringify(buildExportPayload(docs, Date.now()), null, 2);
+
+  let outcome;
+  try {
+    outcome = await shareOrDownload(`music-practice-tracker-${stamp}.json`, json);
+  } catch (err) {
+    console.error("Export failed", err);
+    showError("Could not save the export file. Please try again.");
+    return;
+  }
+
+  if (outcome === "cancelled") {
+    setDataStatus("Export cancelled.");
+    return;
+  }
+  const n = docs.length;
+  setDataStatus(`Exported ${n} ${n === 1 ? "chapter" : "chapters"}.`);
+}
+
+// Swap the whole store for `docs`, then rebuild every piece of in-memory state
+// that described the store we just threw away. Shared by Import and Undo Import.
+async function swapDatabase(docs) {
+  await replaceAllChapters(docs);
+
+  // The undo stack holds per-chapter snapshots whose `version` values were
+  // meaningful against the OLD database, and whose chapters may not even exist
+  // in the new one. Since restoreChapter has no version check, an Undo pressed
+  // after this would write a document from the previous database straight over
+  // the imported one. Drop the stack instead.
+  undoStack = [];
+  refreshUndoBtn();
+
+  currentDoc = null;
+  pendingCommentNames.clear();
+  if (detailsModal.open) detailsModal.close();
+  modalName = null;
+  modalSnapshot = null;
+  resetEditState();
+
+  await loadMostRecentChapter();
+  await refreshDatalists();
+}
+
+async function onImportFile(file) {
+  // Same preamble as undoLast(), for the same reason: comment writes are
+  // fire-and-forget and their mutator re-creates a missing document, so one
+  // still in flight would land AFTER the store is cleared and resurrect a
+  // chapter the imported file does not contain. Flush rather than cancel, so a
+  // note typed seconds ago survives if the file below turns out to be invalid.
+  flushComment();
+  cancelLastUsedTimer();
+  if (detailsModal.open) detailsModal.close();
+  await drainCommentWrites();
+
+  let chapters;
+  try {
+    chapters = parseImportPayload(await file.text());
+  } catch (err) {
+    // Nothing has been written at this point — a rejected file leaves the
+    // database exactly as it was.
+    showError(err.message || "Could not read that file.");
+    return;
+  }
+
+  // The auto-backup, taken immediately before the overwrite. This is the guard
+  // that lets Import skip a confirmation dialog like every other action here.
+  let backup;
+  try {
+    backup = await listChapters();
+  } catch (err) {
+    console.error("Import failed while backing up", err);
+    showError("Could not back up the current data, so nothing was imported.");
+    return;
+  }
+
+  try {
+    await swapDatabase(chapters);
+  } catch (err) {
+    console.error("Import failed", err);
+    showError("Could not import that file. Nothing was changed.");
+    return;
+  }
+
+  importBackup = backup;
+  refreshUndoImportBtn();
+  setDataStatus(
+    `Imported ${chapters.length} ${chapters.length === 1 ? "chapter" : "chapters"}, ` +
+      `replacing ${backup.length}. Undo Import puts the old data back until you reload.`
+  );
+}
+
+async function onUndoImport() {
+  if (importBackup === null) return;
+
+  flushComment();
+  cancelLastUsedTimer();
+  if (detailsModal.open) detailsModal.close();
+  await drainCommentWrites();
+
+  const backup = importBackup;
+  try {
+    await swapDatabase(backup);
+  } catch (err) {
+    console.error("Undo Import failed", err);
+    showError("Could not restore the previous data. Please try again.");
+    return;
+  }
+
+  // One-shot: the backup describes the state before *the* import, and there is
+  // nothing sensible to restore a second time.
+  importBackup = null;
+  refreshUndoImportBtn();
+  setDataStatus(
+    `Restored ${backup.length} ${backup.length === 1 ? "chapter" : "chapters"} from before the import.`
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * last_used_at inactivity timer.
  *
  * Any edit to a top-level field (instrument/book/chapter/min/max) (re)starts a
@@ -2165,11 +2453,62 @@ function wireEvents() {
   sortBtn.addEventListener("click", onSort);
   newExerciseBtn.addEventListener("click", addExercise);
   newExerciseNameInput.addEventListener("input", onNewExerciseNameInput);
+
+  // Data panel. #import-btn forwards to the hidden file input so the visible
+  // control is a .btn; the input's value is cleared afterwards or picking the
+  // same file twice in a row would not fire `change` again.
+  exportBtn.addEventListener("click", onExport);
+  importBtn.addEventListener("click", () => importFileInput.click());
+  importFileInput.addEventListener("change", async () => {
+    const file = importFileInput.files && importFileInput.files[0];
+    importFileInput.value = "";
+    if (file) await onImportFile(file);
+  });
+  undoImportBtn.addEventListener("click", onUndoImport);
 }
 
 /* ------------------------------------------------------------------ *
  * Startup.
  * ------------------------------------------------------------------ */
+
+// Show whatever chapter the database says was used most recently, or clear the
+// form if there is none. Shared by page load and by both whole-database swaps
+// (Import and Undo Import), which need to rebuild the view from scratch after
+// the store underneath it has been replaced.
+async function loadMostRecentChapter() {
+  let recent = null;
+  try {
+    recent = await getMostRecentChapter();
+  } catch (err) {
+    console.error("Failed to restore most recent chapter", err);
+  }
+
+  if (recent) {
+    currentDoc = recent;
+    instrumentInput.value = recent.instrument || "";
+    bookInput.value = recent.book || "";
+    chapterInput.value = recent.chapter || "";
+    applyNumberingSystem(recent.numbering_system);
+    populateRange(recent.last_range); // blanks + greys min/max for a custom list
+    renderList(); // handles null randomization (clears list + counter)
+  } else {
+    // Empty database (a fresh browser, or an import of a file with no
+    // chapters): leave the form in the same state Reset Form produces.
+    currentDoc = null;
+    instrumentInput.value = "";
+    bookInput.value = "";
+    chapterInput.value = "";
+    minInput.value = "";
+    maxInput.value = "";
+    applyNumberingSystem(DEFAULT_NUMBERING);
+    clearExerciseList();
+    clearCounter();
+  }
+
+  syncRangeLock();
+  syncListToolbar();
+}
+
 async function init() {
   // Best-effort durable storage so practice history is not evicted.
   try {
@@ -2182,27 +2521,16 @@ async function init() {
 
   await ensureDb();
 
-  // Restore the most recently used chapter, if any.
-  try {
-    const recent = await getMostRecentChapter();
-    if (recent) {
-      currentDoc = recent;
-      instrumentInput.value = recent.instrument || "";
-      bookInput.value = recent.book || "";
-      chapterInput.value = recent.chapter || "";
-      applyNumberingSystem(recent.numbering_system);
-      populateRange(recent.last_range); // blanks + greys min/max for a custom list
-      renderList(); // handles null randomization (clears list + counter)
-    }
-  } catch (err) {
-    console.error("Failed to restore most recent chapter", err);
-  }
+  await loadMostRecentChapter();
 
   // Edit mode is session-only, and a page load is the one thing that empties
-  // the undo stack (it is in-memory and never persisted).
+  // the undo stack (it is in-memory and never persisted). The same goes for the
+  // import backup — a reload is what makes an import permanent.
   undoStack = [];
+  importBackup = null;
   resetEditState();
   refreshUndoBtn();
+  refreshUndoImportBtn();
   syncRangeLock();
   syncListToolbar();
 

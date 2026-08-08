@@ -126,6 +126,31 @@
       <!-- app.js injects .exercise-row children here at runtime. -->
       <div id="exercise-list" class="exercise-list"></div>
     </section>
+
+    <!-- Export / import, for moving the database between devices. Collapsed by
+         default so a mis-tap cannot reach Import, which REPLACES the entire
+         local database rather than merging into it. The guard is #undo-import-btn
+         rather than a confirm dialog (this app has none): import snapshots the
+         current database in memory first. That snapshot is in-memory only, so a
+         reload makes the import permanent. #import-file is visually hidden and
+         driven by #import-btn so the visible control is a .btn like every other
+         action. -->
+    <details id="data-panel" class="data-panel">
+      <summary>Data</summary>
+      <p class="data-note">
+        Export saves every chapter to a JSON file. Importing one <strong>replaces
+        everything stored on this device</strong> &mdash; use it to copy your practice
+        history from another device, not to combine two of them.
+      </p>
+      <div class="data-actions">
+        <button type="button" id="export-btn" class="btn btn-secondary">Export&hellip;</button>
+        <button type="button" id="import-btn" class="btn btn-secondary">Import&hellip;</button>
+        <button type="button" id="undo-import-btn" class="btn btn-secondary" disabled>Undo Import</button>
+      </div>
+      <input type="file" id="import-file" class="visually-hidden"
+             accept="application/json,.json" aria-label="Choose a backup file to import">
+      <span id="data-status" class="data-status" aria-live="polite"></span>
+    </details>
   </main>
 
   <!-- Details modal (native dialog; opened with showModal() by app.js). -->

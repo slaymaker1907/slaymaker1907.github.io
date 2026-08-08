@@ -15,6 +15,16 @@ Three buttons make a day's practice easier to work through:
 - **Reset Focus** — clears every focused and paused mark in the chapter at once.
 - **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, Reset Focus, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
 
+## Moving between devices
+
+Your practice history is stored by the browser, on the device you typed it into — a phone, a tablet and a laptop each keep their own separate copy. The **Data** panel below the exercise list is how you move it between them.
+
+**Export** saves every chapter to a single JSON file. On an iPhone or iPad it opens the share sheet, so you can AirDrop or message the file straight to another device; elsewhere it downloads.
+
+**Import** takes that file and **replaces everything stored on the device you import into**. It is a copy, not a combine: if a chapter is missing from the file because you deleted it on the other device, importing deletes it here too. So the rule of thumb is to pick whichever device is most up to date, export from it, and import everywhere else.
+
+Nothing asks for confirmation here either. Import quietly keeps a copy of what it overwrote, and **Undo Import** puts it back — until you reload the page, at which point the import is permanent.
+
 ## Run locally
 
 From the repository root:
@@ -31,14 +41,14 @@ There is **no build step and no dependencies** — the files are served exactly 
 
 | File | Role |
 |------|------|
-| `index.html` | UI shell: the header form, the exercise list, and the details `<dialog>`. Loads `app.js` as an ES module. |
+| `index.html` | UI shell: the header form, the exercise list, the Data panel, and the details `<dialog>`. Loads `app.js` as an ES module. |
 | `style.css` | Styling (light/dark aware). |
 | `db.js` | IndexedDB data layer — the store schema and the optimistic-concurrency write helper. |
-| `app.js` | Controller — autoload, randomize, checkbox/comment persistence, and the details modal. |
+| `app.js` | Controller — autoload, randomize, checkbox/comment persistence, export/import, and the details modal. |
 
 ## Data
 
-All state persists in IndexedDB under a database named `music-practice-tracker-<guid>`, as one self-contained document per (instrument, book, chapter).
+All state persists in IndexedDB under a database named `music-practice-tracker-<guid>`, as one self-contained document per (instrument, book, chapter). That storage is per-device — see *Moving between devices* above.
 
 Re-randomizing a chapter always clears every completion checkbox — that is the point of it. Your notes and focus marks are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes and marks go with them. Re-randomizing a hand-edited list keeps every exercise, note, and mark as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
 

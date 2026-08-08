@@ -63,12 +63,16 @@ On a mismatch (another tab wrote first) it throws `VersionConflictError` carryin
 fresh doc. The controller then reloads the fresh doc, re-applies the field currently
 being edited, and retries **once** — i.e. per-field last-write-wins.
 
-Two functions bypass the OCC check. `deleteChapter(key)` is a plain `store.delete()`,
+Three functions bypass the OCC check. `deleteChapter(key)` is a plain `store.delete()`,
 since deleting means "remove regardless of version" rather than a conditional field
 update. `restoreChapter(key, resolver)` backs **Undo**: a version conflict has nothing
 useful to retry, because the snapshot Undo wants to write does not get any fresher. It is
 safe only because it hands the resolver the live stored document and the resolver merges
-against it — see *Undo* below.
+against it — see *Undo* below. `replaceAllChapters(docs)` backs **Import**: a `clear()`
+plus one `put()` per document, all in a single transaction so an import either lands whole
+or not at all. It is the same exemption as `deleteChapter` — an imported file is the truth
+regardless of what is stored — and it writes back the `version` values the file carries, so
+another tab's next write conflicts and re-reads rather than clobbering the import.
 
 ## Write throttling
 
@@ -124,6 +128,8 @@ across several rows would silently drop notes.
   perform, so it reads "Edit List" when off and **"Exit Edit"** while editing, and fills
   in with the accent color while active. See *Custom lists* below.
 - **Sort** — reorders the list for pruning. See *Sorting* below.
+- **Data** — a `<details>` panel below the list, collapsed by default, holding **Export**,
+  **Import** and **Undo Import**. See *Export and import* below.
 
 ## Practice focus
 
@@ -199,6 +205,50 @@ The consequence is worth stating plainly: Undo can land the chapter in a state t
 previously existed — your pre-sort order back, but the other tab's newer checkbox still
 ticked. That is the intended outcome. It is the only behavior that both always lands and
 never silently discards concurrent work.
+
+## Export and import
+
+IndexedDB is per-origin **and per-device**, so a phone, a tablet and a laptop each hold an
+independent database with no connection between them. Export and Import are the manual
+sync: one JSON file carrying the entire `chapters` store.
+
+They live in a **Data** `<details>` panel below the exercise list, collapsed by default so
+a mis-tap cannot reach Import.
+
+**Export** writes every chapter to a file named
+`music-practice-tracker-<timestamp>.json`. On a device that supports sharing files
+(iOS/iPadOS Safari) it opens the system share sheet, so the file can go straight to another
+device over AirDrop or Messages; everywhere else it downloads. The documents go in
+verbatim, `version` field included.
+
+| Envelope field | Purpose |
+| --- | --- |
+| `format` | Always `"music-practice-tracker-export"`. Identifies the file. |
+| `format_version` | Version of the envelope itself, currently `1`. |
+| `app_guid` | The permanent `APP_GUID`. Catches a file from a different app. |
+| `db_version` | The `DB_VERSION` that wrote it. See the version rule below. |
+| `exported_at` | Epoch ms, informational. |
+| `chapters` | The store's documents, exactly as `listChapters()` returned them. |
+
+**Import replaces the entire local database** — it is not a merge. Whichever device you
+export from is the one that wins, which is what makes deletions propagate: a chapter you
+removed on the laptop is genuinely gone after importing the laptop's file on the phone.
+
+The file is fully validated *before* anything is written, so a wrong file produces an error
+message and leaves the database untouched. The `db_version` check is deliberately one-sided:
+a file from a **newer** build of the app is refused, because it may carry a shape this
+device cannot read; a file from an **older** one is accepted, because every optional field
+in this schema is defined so that absent means the default (see `custom_list`,
+`numbering_system` and `focus` above) — which is exactly what an old export looks like.
+
+**Undo Import** is the guard that lets Import skip a confirmation dialog like everything
+else here: the current database is snapshotted in memory immediately before the overwrite,
+and one press puts it back. It is one-shot, and — like the undo history — it lives in memory
+only, so reloading the page is what makes an import permanent.
+
+Importing also clears the ordinary **Undo** history. Those entries hold per-chapter
+snapshots whose version numbers described the *previous* database, and replaying one into a
+freshly imported store would overwrite it with stale data.
 
 ## Custom lists (non-contiguous exercises)
 

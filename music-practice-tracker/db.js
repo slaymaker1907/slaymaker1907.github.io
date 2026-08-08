@@ -43,13 +43,17 @@
 // expectedVersion === null skips the check entirely (create-if-absent / no
 // check), used on the very first Randomize.
 //
-// Exactly TWO functions bypass that check, both deliberately:
+// Exactly THREE functions bypass that check, all deliberately:
 // deleteChapter(key), because removing a chapter means "get rid of this
-// regardless of version"; and restoreChapter(key, resolver), used by Undo.
+// regardless of version"; restoreChapter(key, resolver), used by Undo; and
+// replaceAllChapters(docs), used by Import.
 // restoreChapter is only safe because it hands the resolver the live stored
 // document and the resolver MERGES against it — see app.js's mergeRestore().
 // Never use restoreChapter for a plain "write this doc back": it wins
 // unconditionally, so an unmerged document would erase another tab's edits.
+// replaceAllChapters is the same shape of exemption as deleteChapter: importing
+// a backup file means "this file is now the truth regardless of what is stored",
+// not a conditional field update, so there is no version to check against.
 
 export const APP_GUID = "339718e4-583f-4270-bd72-23f4d23a6c9e";
 export const DB_NAME = `music-practice-tracker-${APP_GUID}`;
@@ -176,6 +180,36 @@ export async function deleteChapter(key) {
   const db = await openDb();
   const store = db.transaction(STORE, "readwrite").objectStore(STORE);
   return requestToPromise(store.delete(key));
+}
+
+// --- whole-store replace (Import) -------------------------------------------
+
+// Wipe the store and rewrite it from `docs`. Everything happens in ONE readwrite
+// transaction, so an import is atomic: either the whole new database lands or
+// the old one is left exactly as it was. Resolves with the number of documents
+// written.
+//
+// Like deleteChapter, this deliberately bypasses mutateChapter's OCC check —
+// importing a backup means "this file is now the truth regardless of version",
+// and there is no per-document version to compare against anyway. The documents
+// are stored with the `version` values the file carries, so another tab's next
+// OCC write conflicts and re-reads rather than silently clobbering the import.
+export async function replaceAllChapters(docs) {
+  const db = await openDb();
+
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+
+    store.clear();
+    for (const doc of docs) store.put(doc);
+
+    tx.oncomplete = () => resolve(docs.length);
+    tx.onabort = () =>
+      reject(tx.error || new Error("replaceAllChapters transaction aborted"));
+    tx.onerror = () =>
+      reject(tx.error || new Error("replaceAllChapters transaction error"));
+  });
 }
 
 // --- undo restore -----------------------------------------------------------

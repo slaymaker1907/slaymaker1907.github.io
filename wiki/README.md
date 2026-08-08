@@ -8,4 +8,5 @@ per-app details that are too detailed for the top-level `README.md` or `CLAUDE.m
 ## Pages
 
 - [`music-practice-tracker.md`](music-practice-tracker.md) — data model, IndexedDB /
-  GUID rules, concurrency design, and UI flow for the `music-practice-tracker/` app.
+  GUID rules, concurrency design, the export/import file format, and UI flow for the
+  `music-practice-tracker/` app.
