@@ -170,18 +170,40 @@ function parseIntStrict(s) {
  * ------------------------------------------------------------------ */
 const LOWER = "abcdefghijklmnopqrstuvwxyz";
 
-// aa/bb/cc after one alphabet is exhausted: the letter cycles every 26 and the
-// repeat count grows, so index 27 is "aa" and 53 is "aaa".
+// A numeric suffix after one alphabet is exhausted: the letter cycles every 26
+// and the suffix counts which pass it is, so index 27 is "a2" and 53 is "a3".
+// (This replaced an earlier "aa"/"aaa" doubling spelling — see
+// legacyLetterParse() and backfillLetterNumbering() below, which migrate any
+// exercise names still minted under it the first time their chapter loads.)
 function letterLabel(n, alphabet) {
   const i = n - 1;
-  return alphabet[i % 26].repeat(Math.floor(i / 26) + 1);
+  const letter = alphabet[i % 26];
+  const cycle = Math.floor(i / 26); // 0-based: 0 = first pass through a-z
+  return cycle === 0 ? letter : `${letter}${cycle + 1}`;
 }
 
 function letterParse(s, alphabet) {
   if (typeof s !== "string") return null;
   const t = s.trim();
-  // One letter of this alphabet, repeated: "b", "bb", "bbb". Mixed runs like
-  // "ab" belong to no index in this scheme and are rejected.
+  if (!t || !alphabet.includes(t[0])) return null;
+  const rest = t.slice(1);
+  if (rest === "") return alphabet.indexOf(t[0]) + 1;
+  // The suffix must be a bare integer >= 2 — "a1" is not a valid spelling of
+  // index 1 ("a" already is that), and anything else (including a second
+  // letter, as in the old "aa" spelling) belongs to no index in this scheme.
+  if (!/^[1-9][0-9]*$/.test(rest)) return null;
+  const cycle = Number(rest) - 1;
+  if (cycle < 1) return null;
+  return alphabet.indexOf(t[0]) + 26 * cycle + 1;
+}
+
+// The OLD doubling spelling this replaced: one letter repeated N times, so "a"
+// is index 1, "aa" is 27, "aaa" is 53. Kept only so backfillLetterNumbering()
+// can recognize and migrate names minted under it — new documents never write
+// this shape, and it is never used by letterLabel()/letterParse() above.
+function legacyLetterParse(s, alphabet) {
+  if (typeof s !== "string") return null;
+  const t = s.trim();
   if (!t || !alphabet.includes(t[0])) return null;
   for (const ch of t) if (ch !== t[0]) return null;
   return alphabet.indexOf(t[0]) + 26 * (t.length - 1) + 1;
@@ -264,6 +286,41 @@ function activeScheme() {
   return NUMBERING[numberingSystem] || NUMBERING[DEFAULT_NUMBERING];
 }
 
+// Only the two letter schemes ever used the old doubling spelling.
+const LEGACY_LETTER_ALPHABETS = {
+  "letters-upper": LOWER.toUpperCase(),
+  "letters-lower": LOWER,
+};
+
+// A document minted under the old "aa"/"bb" doubling spelling for a letters
+// system is silently re-spelled to the current "a2"/"b2" suffix spelling the
+// first time it loads (see loadIntoForm-adjacent call sites below). Every name
+// maps 1:1 to the same 1-based index via buildRenameMap (defined further down,
+// but a hoisted function declaration like this one), carrying its completion
+// state, comment and focus with it exactly like a user-initiated numbering
+// change — so nothing is lost, which is also why this is never pushed onto the
+// undo stack: it is a transparent migration, not an edit. Pure: returns a NEW
+// document, or null if nothing needs to change.
+function backfillLetterNumbering(doc) {
+  if (!doc || !doc.exercises) return null;
+  const alphabet = LEGACY_LETTER_ALPHABETS[doc.numbering_system];
+  if (!alphabet) return null;
+
+  const scheme = NUMBERING[doc.numbering_system];
+  const names = Object.keys(doc.exercises);
+  const legacyScheme = { parse: (s) => legacyLetterParse(s, alphabet) };
+  const renames = buildRenameMap(names, legacyScheme, scheme);
+  if (renames.size === 0) return null;
+
+  const exercises = {};
+  for (const name of names) exercises[renames.get(name) || name] = doc.exercises[name];
+  const next = { ...doc, exercises };
+  if (doc.randomization) {
+    next.randomization = doc.randomization.map((n) => renames.get(n) || n);
+  }
+  return next;
+}
+
 /* ------------------------------------------------------------------ *
  * Focus states.
  *
@@ -331,7 +388,7 @@ function shuffleByFocus(doc, names) {
  *
  * "By number" means by the 1-based INDEX the chapter's numbering system parses
  * out of the name, never by the spelling — that is what puts `z` (26) before
- * `aa` (27) and `IX` (9) before `X` (10), where a string compare would get both
+ * `a2` (27) and `IX` (9) before `X` (10), where a string compare would get both
  * backwards. A list may legitimately hold names minted under an older scheme
  * that the current one cannot read (invariant 14); those have no index to sort
  * by, so they settle at the end of their group in plain alphabetical order.
@@ -1342,6 +1399,7 @@ async function undoLast() {
     applyNumberingSystem(currentDoc.numbering_system);
     populateRange(currentDoc.last_range);
     renderList();
+    backfillLetterNumberingIfNeeded();
   } else {
     applyNumberingSystem(DEFAULT_NUMBERING);
     minInput.value = "";
@@ -1698,12 +1756,76 @@ async function autoload() {
     applyNumberingSystem(doc.numbering_system);
     populateRange(doc.last_range);
     renderList();
+    backfillLetterNumberingIfNeeded(); // fire-and-forget; re-renders if it finds anything
   } else {
     currentDoc = null;
     resetEditState();
     clearExerciseList();
     clearCounter();
     syncListToolbar();
+  }
+}
+
+// Tracks the one backfill write currently in flight, so two DOM events for the
+// same still-unmigrated chapter (a keystroke's "input" plus a later blur's
+// "change", both routed through autoload()) await the same occ() call instead
+// of each starting their own. Purely an efficiency guard — occ() would make a
+// second concurrent write safe (it just finds nothing left to do and writes
+// the doc back unchanged) — but there is no reason to pay for two.
+let letterBackfillInFlight = null; // { triple, promise } | null
+
+// Migrate the chapter now on screen off the old "aa"/"bb" letter spelling, if
+// it is still holding any (see backfillLetterNumbering() above). Called after
+// every load of a chapter — autoload, startup/import/undo-import via
+// loadMostRecentChapter(), and Undo — never after a plain edit, so it runs
+// once per legacy chapter and then never finds anything to do again.
+//
+// Not awaited by its callers: the list is already shown with whatever names it
+// loaded with, and this quietly re-renders if the rename lands. Re-derives the
+// rename map INSIDE the occ() mutator, like the numbering-system rename and
+// nextExerciseName, so a retry against a fresher doc still migrates whatever
+// it actually finds. Deliberately NOT undoable and does not touch
+// last_used_at — a passive migration is not a user edit.
+async function backfillLetterNumberingIfNeeded() {
+  if (!currentDoc || !backfillLetterNumbering(currentDoc)) return;
+  const triple = readTriple();
+  const key = currentKey();
+  if (!triple || !key) return;
+
+  if (letterBackfillInFlight && tripleEq(letterBackfillInFlight.triple, triple)) {
+    await letterBackfillInFlight.promise;
+    return;
+  }
+
+  // A queued comment edit targets the OLD name; land it before the rename
+  // moves that exercise to a new key, exactly as the numbering-system change
+  // does and for the same reason — occ()'s carry() only re-applies pending
+  // comments to names still present in the incoming doc.
+  flushComment();
+
+  const promise = (async () => {
+    try {
+      return await occ(key, (doc) => {
+        if (!doc) throw new Error("chapter no longer exists");
+        return backfillLetterNumbering(doc) || doc;
+      });
+    } catch (err) {
+      console.error("Letter-numbering backfill failed", err);
+      return null;
+    }
+  })();
+  letterBackfillInFlight = { triple, promise };
+  const result = await promise;
+  if (letterBackfillInFlight && letterBackfillInFlight.promise === promise) {
+    letterBackfillInFlight = null;
+  }
+  if (!result) return;
+
+  // Only reflect it on screen if this chapter is still the one showing — the
+  // user may have navigated away (or deleted it) while the write was in flight.
+  if (currentDoc && tripleEq(currentDoc, triple) && tripleEq(readTriple(), triple)) {
+    currentDoc = result;
+    renderList();
   }
 }
 
@@ -2491,6 +2613,7 @@ async function loadMostRecentChapter() {
     applyNumberingSystem(recent.numbering_system);
     populateRange(recent.last_range); // blanks + greys min/max for a custom list
     renderList(); // handles null randomization (clears list + counter)
+    backfillLetterNumberingIfNeeded();
   } else {
     // Empty database (a fresh browser, or an import of a file with no
     // chapters): leave the form in the same state Reset Form produces.

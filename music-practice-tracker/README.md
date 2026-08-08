@@ -4,14 +4,14 @@ A small browser app that randomizes and tracks progress through musical exercise
 
 Two things the range does not have to dictate:
 
-- **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems double up after `z` (`aa`, `bb`, `cc`). Switching systems renumbers the chapter you are on, carrying every checkbox and note across.
+- **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems append a number after `z` (`a2, b2, c2, …`, then `a3`, …). Switching systems renumbers the chapter you are on, carrying every checkbox and note across. (An older version of this app spelled that range by doubling the letter instead — `aa`, `bb` — any exercise still using that spelling is silently updated the next time its chapter loads.)
 - **Hand-edited lists** — **Edit List** turns on edit mode, where you can delete individual exercises with the × and add one with **New Exercise** (which reuses the lowest gap before extending past the end). A hand-edited chapter stops being governed by min/max; filling both boxes in and pressing Randomize is the way back to a contiguous range.
 
 Not every exercise deserves equal time, so each one carries a **practice focus**: one press of the toggle (on a row in **Edit List** mode, or in the expanded view) cycles it from normal to **focused** — a bullseye — to **paused** — a pause bar — and back. Randomize then shuffles within each group and deals them out focused first, normal next, paused last, so what you are drilling lands at the top of the list and what you have shelved sinks to the bottom without being deleted. Paused exercises drop out of the progress count, which says how many it set aside. **Reset Focus** puts the whole chapter back to normal.
 
 Three buttons make a day's practice easier to work through:
 
-- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: focused exercises first and paused ones last, then still-unfinished before finished, each group climbing by exercise number (so `z` before `aa`, and `IX` before `X`).
+- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: focused exercises first and paused ones last, then still-unfinished before finished, each group climbing by exercise number (so `z` before `a2`, and `IX` before `X`).
 - **Reset Focus** — clears every focused and paused mark in the chapter at once.
 - **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, Reset Focus, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
 

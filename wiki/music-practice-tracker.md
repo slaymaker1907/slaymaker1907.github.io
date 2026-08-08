@@ -165,7 +165,7 @@ the same ranking Randomize uses), then still-unfinished exercises before finishe
 each group climbing by exercise number.
 
 "By number" means by the 1-based **index** the chapter's numbering system parses out of
-the name, never by the spelling. That is what puts `z` (26) before `aa` (27) and `IX` (9)
+the name, never by the spelling. That is what puts `z` (26) before `a2` (27) and `IX` (9)
 before `X` (10), where a plain string compare gets both backwards. A list may legitimately
 hold names minted under an older system that the current one cannot read; those have no
 index to sort by, so they settle at the end of their group in alphabetical order.
@@ -302,12 +302,14 @@ and a 1-based index — no schema change:
 | System | Names |
 | --- | --- |
 | Numbers | `1`, `2`, `3`, … |
-| Uppercase letters | `A` … `Z`, then `AA`, `BB`, `CC`, … |
-| Lowercase letters | `a` … `z`, then `aa`, `bb`, `cc`, … |
+| Uppercase letters | `A` … `Z`, then `A2` … `Z2`, `A3` … `Z3`, … |
+| Lowercase letters | `a` … `z`, then `a2` … `z2`, `a3` … `z3`, … |
 | Roman numerals | `I`, `II`, `III`, `IV`, … |
 
-After one alphabet is exhausted the letter schemes repeat the letter rather than counting
-like spreadsheet columns: index 27 is `aa`, 53 is `aaa`.
+After one alphabet is exhausted the letter schemes append a numeral rather than counting
+like spreadsheet columns: index 27 is `a2`, 53 is `a3`. (An earlier version of the app
+doubled the letter instead — `aa`, `aaa` — for that same range; see *Migrating old letter
+names* below.)
 
 The choice is stored per chapter in `numbering_system`, so a scales book and an etude book
 can differ, and it is restored on autoload along with everything else. It governs both
@@ -331,3 +333,14 @@ is dropped rather than guessed at: switching a list holding both `1` and `a` fro
 to numbers would map `a`→`1` on top of the `1` that is staying put, so `a` simply stays
 `a`. Names that are themselves moving vacate their spelling first, so `1`→`a` can take `a`
 when `a` is in the same breath becoming `b`.
+
+### Migrating old letter names
+
+A chapter's letter names past `z` used to double the letter (`aa`, `bb`, …, `aaa`) instead
+of appending a numeral. Any exercise still holding that old spelling is silently re-spelled
+the moment its chapter is loaded — on typing its triple, at page load if it was the most
+recently used chapter, on Undo, and after Import/Undo Import. Nothing is lost: each name
+maps to the same index it always did, so completion state, notes and focus marks all carry
+across exactly as they do for a deliberate numbering-system change above. Unlike that
+change, this migration is silent and **not** undoable — it corrects a spelling, not a
+setting, so there is nothing meaningful to revert.
