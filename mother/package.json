@@ -10,7 +10,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "tone": "^0.10.0"
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "typescript": "^2.3.2"
