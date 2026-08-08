@@ -309,7 +309,10 @@ and a 1-based index — no schema change:
 After one alphabet is exhausted the letter schemes append a numeral rather than counting
 like spreadsheet columns: index 27 is `a2`, 53 is `a3`. (An earlier version of the app
 doubled the letter instead — `aa`, `aaa` — for that same range; see *Migrating old letter
-names* below.)
+names* below.) Since that wrap point is not guessable from the **Numbering** select alone,
+picking either letter scheme shows a one-line hint below the range fields spelling it out
+(e.g. "After z, numbering continues a2, b2, … then a3, …"); numbers and Roman numerals hide
+it, since neither wraps into a shape that needs explaining.
 
 The choice is stored per chapter in `numbering_system`, so a scales book and an etude book
 can differ, and it is restored on autoload along with everything else. It governs both

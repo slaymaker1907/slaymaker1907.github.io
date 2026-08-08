@@ -88,6 +88,12 @@
             </select>
           </div>
         </div>
+        <!-- Only the letter schemes need this: past z the scheme appends a
+             number rather than adding a letter, which is not guessable from
+             the select alone. app.js's syncNumberingInputs() fills this in for
+             letters-upper/letters-lower and empties it (hiding it, :empty)
+             for numbers/roman, where there is nothing non-obvious to explain. -->
+        <p id="numbering-hint" class="numbering-hint" aria-live="polite"></p>
       </fieldset>
 
       <!-- Randomize, Reset Focus and Delete no longer confirm; #undo-btn is the

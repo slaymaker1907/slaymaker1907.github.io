@@ -220,6 +220,16 @@ textarea:focus-visible {
 
 .range-fields .field { flex: 1 1 130px; }
 
+/* Only filled in for the letter schemes (see index.html) -- past z they
+   append a number rather than another letter, which is not guessable from
+   the select alone. :empty hides it entirely for numbers/roman. */
+.numbering-hint {
+  margin: .6rem 0 0;
+  font-size: .8rem;
+  color: var(--text-muted);
+}
+.numbering-hint:empty { display: none; }
+
 /* A custom (non-contiguous) list is not governed by min/max, so app.js blanks
    and disables both boxes. They come back to life inside Edit List mode, where
    filling them in and pressing Randomize is the deliberate way back to a

@@ -37,6 +37,7 @@ const chapterList = document.getElementById("chapter-list");
 const minInput = document.getElementById("min");
 const maxInput = document.getElementById("max");
 const numberingSelect = document.getElementById("numbering");
+const numberingHint = document.getElementById("numbering-hint");
 const randomizeBtn = document.getElementById("randomize-btn");
 const clearBtn = document.getElementById("clear-btn");
 const deleteBtn = document.getElementById("delete-btn");
@@ -247,6 +248,19 @@ function romanParse(s) {
   return romanLabel(n) === t ? n : null;
 }
 
+// A short, self-generating explanation of the letter wrap for #numbering-hint.
+// Built from letterLabel() itself (indexes 27/28/53) rather than hardcoded
+// strings, so it can never drift out of sync with its actual spelling. Only
+// the letter schemes get one — numbers and Roman numerals never wrap into a
+// shape the select doesn't already make obvious.
+function letterWrapHint(alphabet) {
+  const last = alphabet[25];
+  return (
+    `After ${last}, numbering continues ${letterLabel(27, alphabet)}, ` +
+    `${letterLabel(28, alphabet)}, … then ${letterLabel(53, alphabet)}, …`
+  );
+}
+
 const NUMBERING = {
   numbers: {
     textInput: false,
@@ -257,11 +271,13 @@ const NUMBERING = {
     textInput: true,
     label: (n) => letterLabel(n, LOWER.toUpperCase()),
     parse: (s) => letterParse(s, LOWER.toUpperCase()),
+    wrapHint: () => letterWrapHint(LOWER.toUpperCase()),
   },
   "letters-lower": {
     textInput: true,
     label: (n) => letterLabel(n, LOWER),
     parse: (s) => letterParse(s, LOWER),
+    wrapHint: () => letterWrapHint(LOWER),
   },
   roman: {
     textInput: false,
@@ -783,6 +799,10 @@ function syncNumberingInputs() {
     el.placeholder = scheme.label(sample);
     if (el.value.trim() !== "" && parseRangeValue(el.value) === null) el.value = "";
   }
+  // Only the letter schemes carry a wrapHint (see letterWrapHint above); the
+  // element is :empty-hidden for numbers/roman, where there is nothing
+  // non-obvious about what comes after 12 or XII.
+  numberingHint.textContent = scheme.wrapHint ? scheme.wrapHint() : "";
 }
 
 // Adopt a numbering system into the UI. Unknown/absent names fall back to
