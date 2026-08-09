@@ -2527,10 +2527,21 @@ function onFieldChanged(level) {
 }
 
 // The × buttons blank their own field, then cascade exactly like typing would.
+// They also drop the range/numbering, which otherwise would keep showing the
+// abandoned chapter's min/max/numbering even though no chapter is loaded
+// anymore — the same reset onClearForm() does for the whole form. currentDoc
+// is cleared first so syncRangeLock() (called via applyNumberingSystem's
+// sibling below) sees "no chapter" rather than the old chapter's custom_list
+// flag, which would otherwise leave min/max wrongly disabled.
 function resetField(level) {
   const input =
     level === "instrument" ? instrumentInput : level === "book" ? bookInput : chapterInput;
   input.value = "";
+  currentDoc = null;
+  minInput.value = "";
+  maxInput.value = "";
+  applyNumberingSystem(DEFAULT_NUMBERING);
+  syncRangeLock();
   onFieldChanged(level);
   input.focus();
 }

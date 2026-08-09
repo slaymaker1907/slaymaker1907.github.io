@@ -96,7 +96,9 @@ across several rows would silently drop notes.
   Filling in a matching saved combo **autoloads** that record with no button press.
   The three fields form a hierarchy: editing (or ×-clearing) instrument wipes book and
   chapter, and editing book wipes chapter, so a stale descendant value can never
-  linger after its ancestor changes.
+  linger after its ancestor changes. ×-clearing any of the three (unlike plain typing)
+  also resets Min, Max, and Numbering to their defaults, since no chapter is loaded
+  anymore for them to describe.
 - **Randomize** — saves the combo, shuffles the exercise order and bumps
   `last_used_at`/`use_count`. **How many checkboxes it clears depends on the focused set** —
   see *Practice focus* below, which is where that rule lives. No confirmation dialog:
