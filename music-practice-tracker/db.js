@@ -24,14 +24,19 @@
 // why no DB_VERSION bump or migration was needed. `last_range` stores 1-based
 // INDEXES rather than spelled names, so it survives a change of system.
 //
-// Each record under `exercises` may also carry `focus`, the exercise's practice
-// category: "focused", "normal" or "paused". It is written only when it is NOT
-// "normal", so it is absent from every record older versions of the app wrote
-// and from every exercise nobody has touched — absent MEANS "normal", which is
-// again why no DB_VERSION bump or migration was needed. The field never changes
-// which exercises are in the list, only the order they come out in: randomize
-// shuffles within each category and concatenates focused -> normal -> paused,
-// and Sort uses the same ranking as its leading key.
+// Each record under `exercises` may also carry `focus`, marking the exercise as
+// part of the practice rotation. It is written ONLY as "focused", never as the
+// un-focused default, so it is absent from every record older versions of the
+// app wrote and from every exercise nobody has focused — absent MEANS
+// un-focused, which is again why no DB_VERSION bump or migration was needed.
+// That same absence rule retired an earlier third value, "paused": app.js reads
+// any unrecognized value as un-focused, so leftover records need no migration.
+//
+// The field never changes which exercises are in the list. It drives the order
+// (focused first, and Sort uses the same ranking as its leading key) and, in
+// app.js's randomizeOrder(), how much a Randomize resets: with no focused
+// exercise ticked it clears everything, and with at least one ticked it clears
+// only the focused rotation and leaves the un-focused ticks and order intact.
 //
 // Optimistic-concurrency (OCC) contract: every document carries a numeric
 // `version`. Writes go through mutateChapter(key, expectedVersion, mutator),

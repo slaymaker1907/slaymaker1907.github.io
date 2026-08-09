@@ -20,11 +20,10 @@
   --danger:        #dc2626;
   --danger-hover:  #b91c1c;
 
-  /* Practice-focus categories. Deliberately darker than the "yellow" and
-     "green" you would pick on a dark background: a 16px icon in #facc15 on
-     white is barely there. These are the same hues at a weight that reads. */
+  /* Practice-focus accent. Deliberately darker than the "green" you would
+     pick on a dark background: a 16px icon in a light green on white is
+     barely there. Same hue at a weight that reads. */
   --focused:       #15803d;
-  --paused:        #a16207;
 
   --focus-ring:    #4f46e5;
   --shadow:        0 1px 2px rgba(20, 30, 50, .06),
@@ -52,7 +51,6 @@
     --danger-hover:  #ef4444;
 
     --focused:       #4ade80;
-    --paused:        #facc15;
 
     --focus-ring:    #818cf8;
     --shadow:        0 1px 2px rgba(0, 0, 0, .3),
@@ -375,30 +373,29 @@ textarea:focus-visible {
 
      <div class="exercise-row" data-focus="normal">
        <input type="checkbox" class="ex-check">          completion toggle
-       <span class="ex-name"></span>                     e.g. "Exercise 12"
+       <span class="ex-name"></span>                     just the name, e.g. "12"
        <input type="text" class="ex-oneline">            comment (see below)
        <button type="button" class="ex-details"></button>     expand icon
        <button type="button" class="ex-focus"></button>       focus toggle
        <button type="button" class="ex-delete"></button>      delete row
      </div>
 
-   `.ex-details` and `.ex-delete` are icon-only: app.js fills each with an
-   inline SVG (expand arrows / a stroked ×) and carries the text in an
-   aria-label.
+   `.ex-details`, `.ex-focus` and `.ex-delete` are icon-only: app.js fills
+   each with an inline SVG (expand arrows / a bullseye / a stroked ×) and
+   carries the text in an aria-label.
 
-   `.ex-focus` and `.ex-delete` are built on every row but only revealed
-   while #exercise-list carries the `edit-mode` class (toggled by the Edit
-   List button). Keeping them in the DOM means toggling edit mode is a pure
-   CSS change — no re-render, so scroll position and in-progress comment
-   typing survive the toggle.
+   `.ex-delete` is built on every row but only revealed while #exercise-list
+   carries the `edit-mode` class (toggled by the Edit List button). Keeping
+   it in the DOM means toggling edit mode is a pure CSS change — no
+   re-render, so scroll position and in-progress comment typing survive the
+   toggle. `.ex-focus` is NOT hidden that way: it shows on every row at all
+   times, which is what the short `.ex-name` (no "Exercise " prefix) buys
+   room for.
 
-   `data-focus` on the row (and on `.ex-focus` itself) is the exercise's
-   practice category: "focused", "normal" or "paused". It accents focused
-   rows down the left edge in green, strikes through and mutes a paused
-   row's NAME (the row's controls stay at full strength — see the rules
-   below), and lights whichever of the toggle's two icons matches — the
-   bullseye green, the pause bar yellow. Both stay dim, but still legible,
-   for "normal".
+   `data-focus` on the row (and on `.ex-focus` itself) is "focused" or
+   "normal". Focused accents the row down its left edge in green and lights
+   the toggle's bullseye; normal leaves the bullseye dim but legible, since
+   that dim state is the only hint of what pressing it would do.
 
    app.js toggles the `.completed` modifier class on `.exercise-row`
    to strike through + dim the name. `.ex-oneline` is directly editable
@@ -499,18 +496,21 @@ textarea:focus-visible {
 }
 #exercise-list.edit-mode .ex-delete { display: inline-flex; }
 
-/* ---- Three-state focus toggle ------------------------------ *
-   One button holding BOTH icons: a bullseye (focused) and a pause bar
-   (paused). data-focus names the current state and lights the matching
-   icon; "normal" leaves both dim, so the control also advertises the two
-   states a press can reach. Used identically on a row (.ex-focus, revealed
-   only in edit mode) and in the modal (.focus-toggle, always visible). */
+/* ---- Focus toggle ------------------------------------------ *
+   One button holding a bullseye. data-focus is "focused" or "normal";
+   focused lights the icon green and tints the border, normal leaves it dim.
+   "Dim" has to stay legible — it is the only advertisement of what a press
+   would do — so it is a readable grey, not a near-invisible ghost.
+
+   Unlike .ex-delete this is visible on every row at all times, not just in
+   edit mode: choosing what is in the practice rotation is ordinary use, and
+   it is what decides which boxes a Randomize resets. Same control in the
+   modal (.focus-toggle). */
 .ex-focus,
 .focus-toggle {
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  gap: .25rem;
   /* Same vertical padding as .ex-details above, so the two buttons are exactly
      the same height and the row's controls line up. */
   padding: .4rem;
@@ -521,15 +521,10 @@ textarea:focus-visible {
   border-radius: var(--radius-sm);
   transition: background-color .12s ease, border-color .12s ease;
 }
-.ex-focus { display: none; } /* revealed by #exercise-list.edit-mode below */
-#exercise-list.edit-mode .ex-focus { display: inline-flex; }
 
 .ex-focus:hover,
 .focus-toggle:hover { background: var(--surface-alt); }
 
-/* Both icons sit dim until their state is the active one. "Dim" has to stay
-   legible — it is the only hint of what the next press does — so it is a
-   readable grey, not a near-invisible ghost. */
 .focus-icon {
   display: inline-flex;
   opacity: .55;
@@ -538,43 +533,21 @@ textarea:focus-visible {
 .ex-focus:hover .focus-icon,
 .focus-toggle:hover .focus-icon { opacity: .8; }
 
-[data-focus="focused"] > .focus-icon-focused,
-[data-focus="paused"] > .focus-icon-paused {
+[data-focus="focused"] > .focus-icon-focused {
   opacity: 1;
+  color: var(--focused);
 }
-/* Green for go, yellow for held. The two states are then distinguishable by
-   color as well as by shape, which is what makes the row scannable at a
-   glance; the shapes still carry it on their own for anyone who cannot use
-   the color difference. */
-[data-focus="focused"] > .focus-icon-focused { color: var(--focused); }
-[data-focus="paused"] > .focus-icon-paused { color: var(--paused); }
 
 .ex-focus[data-focus="focused"],
 .focus-toggle[data-focus="focused"] { border-color: var(--focused); }
-.ex-focus[data-focus="paused"],
-.focus-toggle[data-focus="paused"] { border-color: var(--paused); }
 
-/* Row-level treatment, so the three categories are scannable without
-   reading each toggle: focused gets a primary accent down its left edge,
-   paused gets the same struck-through, muted NAME that a completed row has.
-   Deliberately not a blanket `opacity` on the row — that dimmed the toggle
-   itself, which is the one thing on a paused row you still need to see and
-   press to get back out of it. */
+/* Row-level accent, so the rotation is scannable without reading each
+   toggle. Deliberately not a blanket `opacity` on the un-focused rows —
+   they are ordinary work, not shelved, and dimming them would also dim the
+   toggle that is the way back into the rotation. */
 .exercise-row[data-focus="focused"] {
   border-left: 3px solid var(--focused);
   padding-left: calc(.7rem - 2px);
-}
-.exercise-row[data-focus="paused"] {
-  background: var(--surface-alt);
-  border-color: var(--border-strong);
-}
-.exercise-row[data-focus="paused"] .ex-name {
-  text-decoration: line-through;
-  color: var(--text-muted);
-}
-/* Struck through for both reasons at once still reads as one strike. */
-.exercise-row[data-focus="paused"] .ex-oneline:not([readonly]) {
-  color: var(--text-muted);
 }
 
 .ex-details:focus-visible,

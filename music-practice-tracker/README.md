@@ -7,12 +7,21 @@ Two things the range does not have to dictate:
 - **Numbering** — exercises can be numbered `1, 2, 3`, lettered `A, B, C` / `a, b, c`, or numbered in Roman numerals, chosen per chapter with the **Numbering** select. The letter systems append a number after `z` (`a2, b2, c2, …`, then `a3`, …) — a note below the select spells this out once you pick a letter scheme, since it's not obvious from the dropdown alone. Switching systems renumbers the chapter you are on, carrying every checkbox and note across. (An older version of this app spelled that range by doubling the letter instead — `aa`, `bb` — any exercise still using that spelling is silently updated the next time its chapter loads.)
 - **Hand-edited lists** — **Edit List** turns on edit mode, where you can delete individual exercises with the × and add one with **New Exercise** (which reuses the lowest gap before extending past the end). A hand-edited chapter stops being governed by min/max; filling both boxes in and pressing Randomize is the way back to a contiguous range.
 
-Not every exercise deserves equal time, so each one carries a **practice focus**: one press of the toggle (on a row in **Edit List** mode, or in the expanded view) cycles it from normal to **focused** — a bullseye — to **paused** — a pause bar — and back. Randomize then shuffles within each group and deals them out focused first, normal next, paused last, so what you are drilling lands at the top of the list and what you have shelved sinks to the bottom without being deleted. Paused exercises drop out of the progress count, which says how many it set aside. **Reset Focus** puts the whole chapter back to normal.
+Not every exercise deserves equal time, so each one carries a **practice focus** — press the bullseye on any row (or in the expanded view) to put it in or out of your **rotation**. Focused exercises get dealt to the top of the list, and the progress counter says how many there are.
+
+The rotation is what decides how much **Randomize** clears, which is the difference between a list you restart and a list you work through:
+
+- **If you've ticked off at least one focused exercise**, Randomize gives you a *partial* reset. Just the focused ones clear and reshuffle back to the top for another pass — everything else is left exactly as it was, ticks and order both. So the handful you're drilling comes round again every session while the rest of the book stays where you left it.
+- **If none of the focused ones are ticked** — including when you haven't focused anything at all — Randomize clears the whole chapter and reshuffles it, the way it always has.
+
+One thing to watch: since it goes by what's ticked right now, pressing Randomize twice in a row clears everything the second time. **Undo** puts it back.
+
+**Reset Focus** empties the rotation in one press.
 
 Three buttons make a day's practice easier to work through:
 
-- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: focused exercises first and paused ones last, then still-unfinished before finished, each group climbing by exercise number (so `z` before `a2`, and `IX` before `X`).
-- **Reset Focus** — clears every focused and paused mark in the chapter at once.
+- **Sort** — the shuffled order is good for practicing and bad for finding one particular exercise. Sort rewrites it into the order you prune in: focused exercises first, then still-unfinished before finished, each group climbing by exercise number (so `z` before `a2`, and `IX` before `X`).
+- **Reset Focus** — empties the rotation, clearing every focus mark in the chapter at once.
 - **Undo** — steps back through the last 20 destructive actions: Sort, Randomize, adding or deleting an exercise, changing the numbering system, Reset Focus, and deleting a chapter. It is why none of those stop to ask "are you sure?". The history lives in memory, so reloading the page clears it.
 
 ## Moving between devices
@@ -50,7 +59,7 @@ There is **no build step and no dependencies** — the files are served exactly 
 
 All state persists in IndexedDB under a database named `music-practice-tracker-<guid>`, as one self-contained document per (instrument, book, chapter). That storage is per-device — see *Moving between devices* above.
 
-Re-randomizing a chapter always clears every completion checkbox — that is the point of it. Your notes and focus marks are kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes and marks go with them. Re-randomizing a hand-edited list keeps every exercise, note, and mark as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
+How much re-randomizing clears depends on your rotation — see the focus section above. Your notes and focus marks are always kept, with one exception: changing the range drops the exercises that fall outside the new one, and their notes and marks go with them. Re-randomizing a hand-edited list keeps every exercise, note, and mark as-is. Nothing here asks for confirmation; **Undo** is the safety net instead.
 
 **Reset Form** just clears the form — it deletes nothing, and retyping the same instrument/book/chapter loads the saved chapter straight back. **Delete** removes the saved chapter; Undo brings it back (and takes you to it), as long as you have not reloaded the page in between.
 

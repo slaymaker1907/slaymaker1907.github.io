@@ -50,7 +50,7 @@ cross-document relations — a chapter is the unit of read and write.
 | `randomized_at` | number \| null | When `randomization` was last set. |
 | `custom_list` | boolean | `true` once the user has hand-added or hand-deleted an exercise. Switches the chapter off the min/max range system (see *Custom lists* below). Absent on documents written before this field existed, so read it as `!!doc.custom_list` — absent means contiguous, which is why it needed no schema migration. |
 | `numbering_system` | string | How new exercise names are spelled: `"numbers"`, `"letters-upper"`, `"letters-lower"`, or `"roman"`. Absent on documents written before this field existed (and any unrecognized value) reads as `"numbers"`, so it needed no schema migration. See *Numbering systems* below. |
-| `exercises` | object (name → `{completed, completed_at, comment, focus?}`) | Per-exercise progress. The key doubles as the display name and supports non-numeric identifiers with no migration — which is exactly what the letter and Roman numbering systems use. `focus` is `"focused"`, `"normal"` or `"paused"` and is **omitted whenever it is `"normal"`**, so it is absent from every pre-feature document and needed no schema migration. See *Practice focus* below. |
+| `exercises` | object (name → `{completed, completed_at, comment, focus?}`) | Per-exercise progress. The key doubles as the display name and supports non-numeric identifiers with no migration — which is exactly what the letter and Roman numbering systems use. `focus` is `"focused"` and is **omitted whenever it is not**, so it is absent from every pre-feature document and needed no schema migration. A retired third value, `"paused"`, may still sit in old records; it reads as un-focused. See *Practice focus* below. |
 | `updated_at` | epoch ms | Last write. |
 
 ## Concurrency
@@ -97,12 +97,11 @@ across several rows would silently drop notes.
   The three fields form a hierarchy: editing (or ×-clearing) instrument wipes book and
   chapter, and editing book wipes chapter, so a stale descendant value can never
   linger after its ancestor changes.
-- **Randomize** — saves the combo and shuffles the exercise order. It has two paths, and
-  both reset `completed`/`completed_at` chapter-wide and bump `last_used_at`/`use_count`
-  immediately. No confirmation dialog: **Undo** is the safety net for this and every
-  other destructive action, and the app has no `window.confirm` calls left.
-  Both shuffle **within each focus category** and lay the categories out focused → normal
-  → paused (see *Practice focus* below).
+- **Randomize** — saves the combo, shuffles the exercise order and bumps
+  `last_used_at`/`use_count`. **How many checkboxes it clears depends on the focused set** —
+  see *Practice focus* below, which is where that rule lives. No confirmation dialog:
+  **Undo** is the safety net for this and every other destructive action, and the app has
+  no `window.confirm` calls left. It has two paths:
   - *Range-driven* (the default): `exercises` is rebuilt to contain only the new range's
     names, dropping anything outside it; `comment` and `focus` carry over for exercise
     names that were already present (i.e. overlap the old range). Sets `last_range`,
@@ -111,13 +110,16 @@ across several rows would silently drop notes.
     added or removed, and every comment and focus state is left untouched.
 - **Reset Form** (button id `clear-btn`) — a UI-only reset; it deletes nothing.
 - **Undo** — reverses the last destructive action. See *Undo* below.
-- **Reset Focus** (button id `reset-focus-btn`) — puts every exercise in the chapter back
-  to normal in one write. Undoable and, like everything else here, unconfirmed.
+- **Reset Focus** (button id `reset-focus-btn`) — empties the practice rotation, putting
+  every exercise back to un-focused in one write. Undoable and, like everything else here,
+  unconfirmed.
 - **Delete** — deletes the chapter document via `deleteChapter` and resets the form like
   Reset Form. Undoable, which is why it no longer confirms; but the undo history lives in
   memory, so a reload between the delete and the undo does make it permanent.
-- **Exercise rows** — each row is a completion checkbox + a one-line comment box + an
-  **expand** icon button, and in Edit List mode also a **focus toggle** and a delete ×.
+- **Exercise rows** — each row is a completion checkbox + the exercise name + a one-line
+  comment box + an **expand** icon button + a **focus toggle**, and in Edit List mode also
+  a delete ×. The name is bare (`12`, not `Exercise 12`), which is what leaves room for the
+  focus toggle to sit on every row rather than hiding in Edit List mode.
   The comment box is directly editable when the comment is a single line (or empty) —
   typed edits go through the same 250ms throttle as the modal, and the box mirrors the
   modal's textarea live while that is open. It locks (`readonly`, greyed out) only once
@@ -133,36 +135,63 @@ across several rows would silently drop notes.
 
 ## Practice focus
 
-Every exercise sits in one of three categories: **focused** (drilling this now),
-**normal**, or **paused** (shelved, but deliberately not deleted). The category is stored
-per exercise as `focus`, and absent means normal.
+An exercise is either **focused** or not. The focused set is the **practice rotation**:
+the handful of things you want back in front of you every session. It is stored per
+exercise as `focus`, and absent means un-focused.
 
-It is an ordering hint, never a filter — nothing is hidden or skipped because it is
-paused:
+The toggle is a single bullseye button — lit green when focused, dim otherwise, one press
+to flip. It sits on **every row at all times** (not tucked behind Edit List mode) and in
+the expanded details modal, and a focused row is accented down its left edge. Unlike Sort
+or Randomize the toggle is *not* pushed onto the undo stack — it is treated like the
+completion checkbox, since pressing it again walks straight back out. **Reset Focus** in
+the header, which empties the rotation in one write, is undoable.
 
-- **Randomize** shuffles inside each category and concatenates focused → normal → paused,
-  so the work you care about lands at the top of the list and the shelved work at the
-  bottom. Both Randomize paths do this.
-- **Sort** uses the same ranking as its leading key, ahead of completion and number.
-- **The progress counter** is the one place the set shrinks: paused exercises count
-  towards neither side of the fraction, and the trailing `· N paused` says so, e.g.
-  `3 of 8 complete · 3 paused`.
+Focus never hides or skips anything. What it changes is the order, and — more importantly
+— **how much a Randomize resets**.
 
-The toggle is one button carrying both a bullseye (focused) and a pause bar (paused);
-whichever matches the current state lights up, and both sit dim for normal. One press
-cycles **normal → focused → paused → normal**. It appears on each row in Edit List mode
-and in the expanded details modal, and the row itself is accented when focused and dimmed
-when paused. Unlike Sort or Randomize the toggle is *not* pushed onto the undo stack — it
-is treated like the completion checkbox, since pressing it again walks back out. **Reset
-Focus** in the header, which rewrites the whole chapter at once, is undoable.
+### What Randomize clears
+
+Randomize asks one question: *is any focused exercise currently ticked?*
+
+**No → full reset.** Every checkbox clears and the whole list reshuffles, focused first.
+This is the from-scratch behavior, and it covers two cases: you have a rotation but haven't
+finished any of it yet, and — the important one — **you have no focused exercises at all**,
+in which case there is no focused box that could be ticked, so Randomize always behaves
+exactly as it did before this feature existed.
+
+**Yes → partial reset.** The focused exercises clear and reshuffle to the top, ready for
+another pass. Everything un-focused is left **completely alone**: same ticks, and the same
+relative order it was already in. Nothing about that section moves.
+
+That split is the whole point. The focused set is a short rotation you repeat every
+session; the un-focused set is a long tail you chip away at a couple of exercises at a
+time, and a Randomize never wipes that accumulated progress out from under you. When you
+widen the range mid-rotation, the new exercises simply join the end of the un-focused
+block.
+
+One sharp edge worth knowing: because the question is asked of the checkboxes *as they
+stand*, pressing Randomize twice in a row does a full clear the second time — the first
+press left no focused box ticked. **Undo** puts it back.
+
+Beyond Randomize, **Sort** uses focus as its leading key (ahead of completion and number),
+and **the progress counter** counts every exercise on screen and appends `· N focused` to
+name the size of the rotation, e.g. `3 of 8 complete · 2 focused`.
+
+### The retired "paused" state
+
+Focus used to be three-way, with a **paused** state for work shelved but deliberately not
+deleted. That is gone; there is only focused and not. Any exercise still carrying the old
+value simply reads as un-focused, so nothing had to be migrated and no old data was
+touched — the stale value disappears for real the next time that exercise is toggled or
+Reset Focus runs.
 
 ## Sorting
 
 The stored order is a practice shuffle, which makes finding one specific exercise — to
 tick off, or to delete once it is finished — a linear scan. **Sort** rewrites it into the
-order you actually prune in: focus category first (focused, then normal, then paused —
-the same ranking Randomize uses), then still-unfinished exercises before finished ones,
-each group climbing by exercise number.
+order you actually prune in: focused before un-focused (the same ranking Randomize lays
+out), then still-unfinished exercises before finished ones, each group climbing by
+exercise number.
 
 "By number" means by the 1-based **index** the chapter's numbering system parses out of
 the name, never by the spelling. That is what puts `z` (26) before `a2` (27) and `IX` (9)

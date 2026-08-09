@@ -340,23 +340,25 @@ function backfillLetterNumbering(doc) {
 /* ------------------------------------------------------------------ *
  * Focus states.
  *
- * Every exercise sits in one of three practice categories: "focused" (drill
- * this), "normal", or "paused" (shelved, but not deleted). The category is a
- * per-exercise field, `focus`, and it is ABSENT on every document written
- * before this feature — read it only through focusOf(), which treats absent as
- * "normal". That absence is why this needed no DB_VERSION bump or migration,
- * the same trick custom_list and numbering_system already use.
+ * An exercise is either "focused" (in the active rotation) or "normal" (not).
+ * The state is a per-exercise field, `focus`, written ONLY when it is not the
+ * default, so it is absent from every exercise nobody has focused and from
+ * every document written before the feature existed. Read it only through
+ * focusOf(), which treats absent — and any value it does not recognize — as
+ * "normal". That tolerance is why this needed no DB_VERSION bump or migration,
+ * the same trick custom_list and numbering_system already use, and it is also
+ * what retires the old third state: a record still carrying focus: "paused"
+ * from an earlier version simply reads as normal, so there is nothing to
+ * migrate and nothing to clean up.
  *
- * The category never partitions the exercise SET, only its ORDER: randomization
- * shuffles within each category and concatenates focused -> normal -> paused,
- * and Sort uses the same rank as its leading key. Stating that order once, here,
- * is what stops the two Randomize paths and Sort from drifting apart.
+ * Focus never partitions the exercise SET, only its ORDER and what a Randomize
+ * resets — see randomizeOrder() below, which is the single definition both
+ * Randomize paths share, and focusRank(), which Sort reuses as its leading key.
  * ------------------------------------------------------------------ */
 const DEFAULT_FOCUS = "normal";
-// The cycle a press walks: normal -> focused -> paused -> normal.
-const FOCUS_CYCLE = ["normal", "focused", "paused"];
-// Display/sort order, which is deliberately NOT the cycle order.
-const FOCUS_RANK = { focused: 0, normal: 1, paused: 2 };
+// Display/sort order. Also the set of recognized values: anything else (a
+// leftover "paused", say) falls through focusOf() to the default.
+const FOCUS_RANK = { focused: 0, normal: 1 };
 
 function focusOf(doc, name) {
   const ex = doc && doc.exercises && doc.exercises[name];
@@ -364,32 +366,83 @@ function focusOf(doc, name) {
   return FOCUS_RANK[value] !== undefined ? value : DEFAULT_FOCUS;
 }
 
+// Two states, so a press is a plain flip rather than a cycle.
 function nextFocus(state) {
-  const at = FOCUS_CYCLE.indexOf(state);
-  return FOCUS_CYCLE[(at + 1) % FOCUS_CYCLE.length];
+  return state === "focused" ? "normal" : "focused";
 }
 
 function focusRank(doc, name) {
   return FOCUS_RANK[focusOf(doc, name)];
 }
 
-// Split `names` into the three category buckets, each keeping its input order.
+// Split `names` into the two buckets, each keeping its input order.
 // Pure: never mutates either argument.
 function partitionByFocus(doc, names) {
-  const buckets = { focused: [], normal: [], paused: [] };
+  const buckets = { focused: [], normal: [] };
   for (const name of names) buckets[focusOf(doc, name)].push(name);
   return buckets;
 }
 
-// The shared randomization order: shuffled inside each category, categories
-// concatenated best-first. Both Randomize paths go through this.
-function shuffleByFocus(doc, names) {
-  const buckets = partitionByFocus(doc, names);
-  return [
-    ...shuffle(buckets.focused),
-    ...shuffle(buckets.normal),
-    ...shuffle(buckets.paused),
-  ];
+function isCompleted(doc, name) {
+  const ex = doc && doc.exercises && doc.exercises[name];
+  return !!(ex && ex.completed);
+}
+
+/* Does any focused exercise carry a tick right now?
+ *
+ * This one question decides which of the two Randomize behaviors runs, and it
+ * is deliberately a read of the CURRENT boxes with no extra stored state. Note
+ * the vacuous case is load-bearing: a chapter with nothing focused has no
+ * focused box that could be ticked, so it always answers false and therefore
+ * always gets the full reset — which is exactly how Randomize behaved before
+ * focus existed. Pure.
+ */
+function anyFocusedCompleted(doc) {
+  const names = Object.keys((doc && doc.exercises) || {});
+  return names.some((n) => focusOf(doc, n) === "focused" && isCompleted(doc, n));
+}
+
+/* The order and the reset scope a Randomize produces, in one place so the
+ * contiguous and custom-list paths cannot drift apart.
+ *
+ * FULL (no focused exercise is ticked): clear every box and reshuffle
+ * everything, focused block on top. This is the from-scratch behavior, and the
+ * only one a chapter with nothing focused ever sees.
+ *
+ * PARTIAL (at least one focused exercise is ticked): the focused set is the
+ * rotation, so it clears and reshuffles to the top — but everything un-focused
+ * is left strictly alone, keeping BOTH its ticks and the exact relative order
+ * it already had, so a slow trawl through the un-focused work is never
+ * disturbed. Names brand new to the chapter (a widened range) have no previous
+ * position to preserve, so they land after the un-focused block.
+ *
+ * Returns { full, order }. `full` tells the caller which boxes to clear: all of
+ * them, or only the focused ones. Pure — reads `doc` for focus/completion and
+ * never mutates it.
+ */
+function randomizeOrder(doc, names, prevOrder) {
+  const full = !anyFocusedCompleted(doc);
+  if (full) {
+    const buckets = partitionByFocus(doc, names);
+    return { full, order: [...shuffle(buckets.focused), ...shuffle(buckets.normal)] };
+  }
+
+  const wanted = new Set(names);
+  const focused = names.filter((n) => focusOf(doc, n) === "focused");
+  const placed = new Set(focused);
+
+  // Un-focused names in their existing order, untouched.
+  const kept = [];
+  for (const name of prevOrder || []) {
+    if (wanted.has(name) && !placed.has(name)) {
+      kept.push(name);
+      placed.add(name);
+    }
+  }
+  // Anything `names` supplies that had no previous position.
+  const fresh = names.filter((n) => !placed.has(n));
+
+  return { full, order: [...shuffle(focused), ...kept, ...fresh] };
 }
 
 /* ------------------------------------------------------------------ *
@@ -397,10 +450,9 @@ function shuffleByFocus(doc, names) {
  *
  * The stored order is a practice shuffle, which makes finding one specific
  * exercise (to tick off, or to delete once it is finished) a linear scan. Sort
- * rewrites it into the order you actually prune in: focus category first
- * (focused, then normal, then paused — the same ranking randomization uses), then
- * still-unfinished exercises before finished ones, each group climbing by
- * exercise number.
+ * rewrites it into the order you actually prune in: focused before un-focused
+ * (the same ranking a Randomize lays out), then still-unfinished exercises
+ * before finished ones, each group climbing by exercise number.
  *
  * "By number" means by the 1-based INDEX the chapter's numbering system parses
  * out of the name, never by the spelling — that is what puts `z` (26) before
@@ -421,7 +473,7 @@ function sortKey(doc, name) {
 }
 
 function compareSortKeys(a, b) {
-  // Focus category outranks everything: focused block, then normal, then paused.
+  // Focus outranks everything: the focused block, then everything else.
   if (a.rank !== b.rank) return a.rank - b.rank;
   // Unfinished work first; everything already done sinks to the bottom.
   if (a.done !== b.done) return a.done ? 1 : -1;
@@ -705,51 +757,50 @@ const ICONS = {
     '<circle cx="8" cy="8" r="5.5"/>' +
     '<path d="M8 .9V4.4M8 11.6V15.1M.9 8H4.4M11.6 8H15.1"/>' +
     '<circle cx="8" cy="8" r="1.9" fill="currentColor" stroke="none"/></svg>',
-  // Paused: the standard two-bar pause glyph.
-  pause:
-    `${SVG_OPEN} fill="currentColor">` +
-    '<rect x="4" y="3" width="3" height="10" rx="1"/>' +
-    '<rect x="9" y="3" width="3" height="10" rx="1"/></svg>',
 };
 
-// The three-state toggle, used identically on a row and in the modal: one
-// button holding BOTH icons, with CSS lighting whichever one the current
-// data-focus names (and dimming both for "normal").
+// The focus toggle, used identically on a row and in the modal: one button
+// holding the bullseye, lit when data-focus is "focused" and dim otherwise.
+// Dim still has to read clearly — it is the only advertisement of what a press
+// would do.
 function buildFocusToggle(className) {
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = className;
-  btn.innerHTML =
-    `<span class="focus-icon focus-icon-focused">${ICONS.bullseye}</span>` +
-    `<span class="focus-icon focus-icon-paused">${ICONS.pause}</span>`;
+  btn.innerHTML = `<span class="focus-icon focus-icon-focused">${ICONS.bullseye}</span>`;
   return btn;
 }
 
 const FOCUS_LABEL = {
-  normal: "normal",
+  normal: "not focused",
   focused: "focused",
-  paused: "paused",
 };
 
+// Stamp one toggle button with a state. Focus is binary now, so aria-pressed is
+// the honest semantic for it; data-focus stays because CSS keys the lit icon and
+// the row accent off it.
+function markFocusToggle(btn, name, state) {
+  btn.dataset.focus = state;
+  btn.setAttribute("aria-pressed", state === "focused" ? "true" : "false");
+  btn.setAttribute(
+    "aria-label",
+    `Exercise ${name} is ${FOCUS_LABEL[state]}; change practice focus`
+  );
+}
+
 // One place sets every surface that shows a focus state: the row (whose
-// data-focus drives both the lit icon and the row-level dim/accent) and, when
-// the modal is on that exercise, the modal's copy of the toggle.
+// data-focus drives both the lit icon and the row-level accent) and, when the
+// modal is on that exercise, the modal's copy of the toggle.
 function syncRowFocus(name) {
   const state = focusOf(currentDoc, name);
   const row = findRow(name);
   if (row) {
     row.dataset.focus = state;
     const btn = row.querySelector(".ex-focus");
-    if (btn) {
-      btn.dataset.focus = state;
-      btn.setAttribute(
-        "aria-label",
-        `Exercise ${name} is ${FOCUS_LABEL[state]}; change practice focus`
-      );
-    }
+    if (btn) markFocusToggle(btn, name, state);
   }
   if (detailsModal.open && modalName === name) {
-    modalFocusBtn.dataset.focus = state;
+    markFocusToggle(modalFocusBtn, name, state);
     modalFocusLabel.textContent = FOCUS_LABEL[state];
   }
 }
@@ -765,26 +816,22 @@ function clearCounter() {
   progressCounter.textContent = "";
 }
 
-// Paused exercises are shelved, so they count towards neither side of the
-// progress fraction. The trailing "N paused" is what keeps that honest: without
-// it, "3 of 8 complete" silently contradicts a visible list of eleven rows.
+// Every exercise on screen counts, so the fraction can never contradict the
+// visible list. The trailing "N focused" names the size of the rotation that a
+// Randomize will reset, which is the one number the fraction alone hides.
 function updateCounter() {
   let total = 0;
   let done = 0;
-  let paused = 0;
+  let focused = 0;
   if (currentDoc && currentDoc.randomization) {
     for (const name of currentDoc.randomization) {
-      if (focusOf(currentDoc, name) === "paused") {
-        paused++;
-        continue;
-      }
       total++;
-      const ex = currentDoc.exercises[name];
-      if (ex && ex.completed) done++;
+      if (focusOf(currentDoc, name) === "focused") focused++;
+      if (isCompleted(currentDoc, name)) done++;
     }
   }
   progressCounter.textContent =
-    `${done} of ${total} complete` + (paused > 0 ? ` · ${paused} paused` : "");
+    `${done} of ${total} complete` + (focused > 0 ? ` · ${focused} focused` : "");
 }
 
 // Point #min/#max at the active scheme: the letter schemes take text, numbers
@@ -888,8 +935,8 @@ function buildRow(name) {
   const row = document.createElement("div");
   row.className = "exercise-row" + (ex.completed ? " completed" : "");
   row.dataset.name = name;
-  // Drives the paused dimming / focused accent; the toggle's own lit icon is
-  // keyed off its matching data-focus, set by syncRowFocus below.
+  // Drives the focused accent down the row's left edge; the toggle's own lit
+  // icon is keyed off its matching data-focus, stamped below.
   row.dataset.focus = focusOf(currentDoc, name);
 
   const check = document.createElement("input");
@@ -898,9 +945,12 @@ function buildRow(name) {
   check.checked = !!ex.completed;
   check.addEventListener("change", () => toggleCompleted(name, check.checked));
 
+  // Just the name — no "Exercise " prefix. The prefix said nothing the heading
+  // and context did not already, and the row needs that width now that the
+  // focus toggle is present on every row rather than only in edit mode.
   const nameSpan = document.createElement("span");
   nameSpan.className = "ex-name";
-  nameSpan.textContent = "Exercise " + name;
+  nameSpan.textContent = name;
 
   const oneline = document.createElement("input");
   oneline.type = "text";
@@ -932,12 +982,14 @@ function buildRow(name) {
   details.setAttribute("aria-label", "Expand exercise " + name);
   details.addEventListener("click", () => openModal(name));
 
-  // Focus toggle and delete are both built on every row but hidden by CSS
-  // unless #exercise-list has .edit-mode, so toggling Edit List never
-  // re-renders (and never interrupts typing).
+  // The focus toggle is always visible: deciding what is in the rotation is
+  // ordinary practice, not list surgery, and burying it behind Edit List made
+  // the one control that steers Randomize the hardest one to reach.
   const focus = buildFocusToggle("ex-focus");
   focus.addEventListener("click", () => cycleFocus(name));
 
+  // Delete stays edit-mode-only, still built on every row so that toggling
+  // Edit List is a pure CSS change and never re-renders (or interrupts typing).
   const del = document.createElement("button");
   del.type = "button";
   del.className = "ex-delete";
@@ -946,12 +998,7 @@ function buildRow(name) {
   del.addEventListener("click", () => deleteExercise(name));
 
   row.append(check, nameSpan, oneline, details, focus, del);
-  // Stamps the toggle's data-focus + aria-label from the row it now lives in.
-  focus.dataset.focus = row.dataset.focus;
-  focus.setAttribute(
-    "aria-label",
-    `Exercise ${name} is ${FOCUS_LABEL[row.dataset.focus]}; change practice focus`
-  );
+  markFocusToggle(focus, name, row.dataset.focus);
   return row;
 }
 
@@ -1915,23 +1962,37 @@ async function onRandomize() {
   try {
     await occ(key, (doc) => {
       doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
+      // Plan against the doc as it stands NOW, before the rebuild below
+      // replaces doc.exercises. It has to happen here: the plan's full-vs-
+      // partial answer is a read of the current ticks, and a partial reset
+      // clears exactly the focused ones — so asking again afterwards would
+      // always come back "full" and silently undo the decision. Names brand new
+      // to this range have no record yet, so focusOf() reads them as un-focused,
+      // which is what puts them after the un-focused block.
+      const plan = randomizeOrder(doc, names, doc.randomization || []);
+      const full = plan.full;
+
       // A chapter has exactly one active range: rebuild `exercises` from
-      // scratch for the new range only, dropping anything outside it.
-      // Completed state always resets; comments carry over for exercise
-      // names that were already present (i.e. overlap the old range).
+      // scratch for the new range only, dropping anything outside it. Comments
+      // carry over for exercise names that were already present (i.e. overlap
+      // the old range).
       const newExercises = {};
       for (const nm of names) {
         const prev = doc.exercises[nm];
-        newExercises[nm] = {
-          completed: false,
-          completed_at: null,
-          comment: prev ? prev.comment || "" : "",
-        };
         // Focus carries over on exactly the same terms as the comment: kept for
         // names present in both ranges, gone with anything dropped. Written only
         // when it is not the default, so a chapter nobody has focused stays
         // byte-identical to what earlier versions of the app wrote.
         const focus = prev ? focusOf(doc, nm) : DEFAULT_FOCUS;
+        // A full reset clears every box. A partial one clears only the focused
+        // rotation and leaves every un-focused tick exactly where it was, so a
+        // slow trawl through the un-focused work survives the shuffle.
+        const keepTick = !full && prev && focus !== "focused";
+        newExercises[nm] = {
+          completed: keepTick ? !!prev.completed : false,
+          completed_at: keepTick ? prev.completed_at || null : null,
+          comment: prev ? prev.comment || "" : "",
+        };
         if (focus !== DEFAULT_FOCUS) newExercises[nm].focus = focus;
       }
       doc.exercises = newExercises;
@@ -1941,9 +2002,7 @@ async function onRandomize() {
       doc.numbering_system = numberingSystem;
       // Rebuilding from a range is exactly what un-customizes a chapter.
       doc.custom_list = false;
-      // Shuffled within each focus category, focused block first. Read off the
-      // doc AFTER newExercises lands, so it sees the carried-over states.
-      doc.randomization = shuffleByFocus(doc, names);
+      doc.randomization = plan.order;
       doc.randomized_at = Date.now();
       doc.use_count = (doc.use_count || 0) + 1;
       doc.last_used_at = Date.now();
@@ -1965,8 +2024,11 @@ async function onRandomize() {
  * Randomize for a custom list: reshuffle the exercises that are already
  * there. min/max are ignored entirely — nothing is added, nothing is
  * dropped, and every comment and focus state is left exactly as it was.
- * Completion state still resets chapter-wide, matching the contiguous path,
- * and the new order is grouped by focus exactly as the contiguous path's is.
+ * Which boxes clear and where each name lands come from randomizeOrder(),
+ * exactly as they do on the contiguous path — so a partial reset here keeps
+ * the un-focused ticks and un-focused order too. Since nothing is ever added
+ * to a custom list by a Randomize, that path's "brand new name" case cannot
+ * arise here and every name has a previous position to preserve.
  * ------------------------------------------------------------------ */
 async function reshuffleCustomList(triple) {
   flushComment(); // land any in-flight note edit before we rewrite the doc
@@ -1982,13 +2044,19 @@ async function reshuffleCustomList(triple) {
         doc.randomization && doc.randomization.length
           ? doc.randomization.slice()
           : Object.keys(doc.exercises || {});
+      // Plan before clearing anything: a partial reset clears exactly the
+      // focused ticks, so asking afterwards would always answer "full".
+      const plan = randomizeOrder(doc, names, doc.randomization || names);
       for (const nm of names) {
         ensureExercise(doc, nm);
+        // Full reset clears every box; a partial one clears only the focused
+        // rotation and leaves the un-focused ticks alone.
+        if (!plan.full && focusOf(doc, nm) !== "focused") continue;
         doc.exercises[nm].completed = false;
         doc.exercises[nm].completed_at = null;
         // comment and focus deliberately untouched
       }
-      doc.randomization = shuffleByFocus(doc, names);
+      doc.randomization = plan.order;
       doc.randomized_at = Date.now();
       doc.use_count = (doc.use_count || 0) + 1;
       doc.last_used_at = Date.now();
@@ -2123,7 +2191,14 @@ async function setFocus(name, state) {
   // look like it did nothing.
   const previous = focusOf(currentDoc, name);
   ensureExerciseCurrent(name);
-  currentDoc.exercises[name].focus = state;
+  // The default is stored as ABSENCE, never as the literal string, so an
+  // exercise nobody has focused stays byte-identical to what earlier versions
+  // wrote — and so a stale value from a retired state cannot survive a toggle.
+  const stamp = (ex) => {
+    if (state === DEFAULT_FOCUS) delete ex.focus;
+    else ex.focus = state;
+  };
+  stamp(currentDoc.exercises[name]);
   syncRowFocus(name);
   updateCounter();
 
@@ -2132,7 +2207,7 @@ async function setFocus(name, state) {
       occ(key, (doc) => {
         doc = doc || newChapterDoc(triple.instrument, triple.book, triple.chapter);
         ensureExercise(doc, name);
-        doc.exercises[name].focus = state;
+        stamp(doc.exercises[name]);
         return doc;
       })
     );
@@ -2141,12 +2216,15 @@ async function setFocus(name, state) {
   } catch (err) {
     console.error("Focus change failed", err);
     if (currentDoc && currentDoc.exercises && currentDoc.exercises[name]) {
-      currentDoc.exercises[name].focus = previous;
+      // Roll memory back by the same absence rule the write uses.
+      if (previous === DEFAULT_FOCUS) delete currentDoc.exercises[name].focus;
+      else currentDoc.exercises[name].focus = previous;
     }
     renderList();
   }
 }
 
+// One press flips the exercise in or out of the rotation.
 function cycleFocus(name) {
   setFocus(name, nextFocus(focusOf(currentDoc, name)));
 }
@@ -2567,6 +2645,7 @@ function wireEvents() {
   // after the ICONS table is initialized.
   modalFocusBtn = buildFocusToggle("focus-toggle");
   modalFocusBtn.dataset.focus = DEFAULT_FOCUS;
+  modalFocusBtn.setAttribute("aria-pressed", "false");
   modalFocusBtn.setAttribute("aria-label", "Change practice focus");
   modalFocusBtn.addEventListener("click", () => {
     if (modalName !== null) cycleFocus(modalName);
