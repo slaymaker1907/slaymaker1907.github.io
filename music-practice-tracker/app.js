@@ -1930,7 +1930,7 @@ async function onRandomize() {
   if (min === null || max === null) {
     showError(
       scheme.textInput
-        ? "Min and max must be letters like a, b, or aa."
+        ? "Min and max must be letters like a, b, or a2."
         : "Min and max must be whole numbers of 1 or more."
     );
     return;
