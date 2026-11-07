@@ -10,3 +10,5 @@ per-app details that are too detailed for the top-level `README.md` or `CLAUDE.m
 - [`music-practice-tracker.md`](music-practice-tracker.md) — data model, IndexedDB /
   GUID rules, concurrency design, the export/import file format, and UI flow for the
   `music-practice-tracker/` app.
+- [`metronome.md`](metronome.md) — the Maelzel-marking metronome: tempo ladder,
+  practice ramp, subdivision, storage format, and UI flow for the `metronome/` app.

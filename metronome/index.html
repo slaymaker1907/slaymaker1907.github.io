@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#800000">
+  <title>Metronome</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23800000'/%3E%3Ccircle cx='8' cy='8' r='4' fill='%23fbf6f1'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="app-header">
+      <h1>Metronome</h1>
+      <p class="subtitle">Steps follow the traditional mechanical markings.</p>
+    </header>
+
+    <!-- ============ Tempo display ============ -->
+    <section class="panel tempo-panel" aria-labelledby="tempo-heading">
+      <h2 id="tempo-heading" class="visually-hidden">Tempo</h2>
+      <p class="tempo-readout">
+        <output id="bpm" class="bpm">60</output>
+        <span class="bpm-unit">BPM</span>
+      </p>
+      <p id="term" class="term">Larghetto</p>
+      <p id="rung-info" class="rung-info">Marking 11 of 39</p>
+
+      <div id="beats" class="beats" role="img" aria-label="Beat indicator"></div>
+    </section>
+
+    <!-- ============ Primary controls ============ -->
+    <section class="panel controls" aria-label="Playback controls">
+      <button id="toggle" type="button" class="btn btn-primary btn-huge" aria-pressed="false">
+        Start
+      </button>
+
+      <div class="step-row">
+        <button id="slower" type="button" class="btn btn-step">
+          <span class="step-sign" aria-hidden="true">&minus;</span>
+          <span>Slower<span class="visually-hidden"> one marking</span></span>
+        </button>
+        <button id="faster" type="button" class="btn btn-step">
+          <span class="step-sign" aria-hidden="true">+</span>
+          <span>Faster<span class="visually-hidden"> one marking</span></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ============ Practice ramp ============ -->
+    <section class="panel" aria-labelledby="ramp-heading">
+      <h2 id="ramp-heading">Practice ramp</h2>
+      <p class="hint">Start low, then move up one marking at a time to your target.</p>
+
+      <div class="field-row">
+        <label class="field">
+          <span class="field-label">Start</span>
+          <select id="ramp-start" class="select-big"></select>
+        </label>
+        <label class="field">
+          <span class="field-label">Target</span>
+          <select id="ramp-target" class="select-big"></select>
+        </label>
+      </div>
+
+      <div class="ramp-status">
+        <progress id="ramp-progress" max="100" value="0" aria-label="Ramp progress">0%</progress>
+        <p id="ramp-text" class="ramp-text" aria-live="polite">Set a start and target.</p>
+      </div>
+
+      <div class="button-row">
+        <button id="ramp-next" type="button" class="btn btn-secondary">Next step</button>
+        <button id="ramp-reset" type="button" class="btn btn-secondary">Back to start</button>
+      </div>
+    </section>
+
+    <!-- ============ Settings ============ -->
+    <section class="panel" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">Settings</h2>
+
+      <div class="field">
+        <label class="field-label" for="beats-per-bar">Beats per bar</label>
+        <select id="beats-per-bar" class="select-big"></select>
+      </div>
+
+      <div class="field checkbox-field">
+        <input id="accent" type="checkbox">
+        <label for="accent">Accent the first beat of each bar</label>
+      </div>
+
+      <fieldset class="field">
+        <legend class="field-label">Subdivision</legend>
+        <div class="segmented" id="subdivision-group">
+          <label class="choice"><input type="radio" name="subdivision" value="off"><span>Off</span></label>
+          <label class="choice"><input type="radio" name="subdivision" value="8"><span>8ths</span></label>
+          <label class="choice"><input type="radio" name="subdivision" value="3"><span>Triplets</span></label>
+          <label class="choice"><input type="radio" name="subdivision" value="16"><span>16ths</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field-label">Sound</legend>
+        <div class="segmented" id="sound-group">
+          <label class="choice"><input type="radio" name="sound" value="wood"><span>Wood</span></label>
+          <label class="choice"><input type="radio" name="sound" value="beep"><span>Beep</span></label>
+          <label class="choice"><input type="radio" name="sound" value="soft"><span>Soft</span></label>
+        </div>
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field-label">Volume</legend>
+        <div class="segmented" id="volume-group">
+          <label class="choice"><input type="radio" name="volume" value="1"><span>1</span></label>
+          <label class="choice"><input type="radio" name="volume" value="2"><span>2</span></label>
+          <label class="choice"><input type="radio" name="volume" value="3"><span>3</span></label>
+          <label class="choice"><input type="radio" name="volume" value="4"><span>4</span></label>
+        </div>
+      </fieldset>
+
+      <div class="field">
+        <label class="field-label" for="guard">Ignore repeat taps for</label>
+        <select id="guard" class="select-big">
+          <option value="0">Don't ignore</option>
+          <option value="250">0.25 seconds</option>
+          <option value="400">0.4 seconds</option>
+          <option value="700">0.7 seconds</option>
+        </select>
+        <p class="hint">Stops a shaky second tap from skipping a marking or stopping playback.</p>
+      </div>
+    </section>
+
+    <p id="announce" class="visually-hidden" aria-live="polite"></p>
+    <p class="footer-note">Settings and your place in the ramp are saved on this device.</p>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

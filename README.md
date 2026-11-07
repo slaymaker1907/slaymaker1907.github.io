@@ -12,6 +12,7 @@ directory served as-is.
 | --- | --- |
 | `d4cubeoptim/` | Most actively developed app; synced from a separate source repo (see the wiki / `for_claude/`). |
 | `music-practice-tracker/` | Dependency-free SPA that randomizes and tracks musical-exercise practice; IndexedDB-backed. |
+| `metronome/` | Dependency-free metronome that steps only through the traditional Maelzel markings, with a practice ramp; plain JS, saved to the device. |
 | `mother/` | Small Tone.js audio app. |
 | `augus818/` (+ `ability_score.html`, `weapon818.html`) | D&D pages. |
 | `dice-roller/`, `dice-counter/` | Dice utilities. |
