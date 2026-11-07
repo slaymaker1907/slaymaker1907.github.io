@@ -14,6 +14,6 @@ A plain-JavaScript metronome whose tempo moves only along the traditional mechan
 
 Everything is sized for phone use with big targets and no sliders. Settings and your place in the ramp are saved in this browser.
 
-Notes: iPhone's silent switch can mute the sound. Playback keeps the screen awake where the browser supports it.
+Notes: on iPhone it plays through the speaker even with the silent switch on, like a music app. Playback keeps the screen awake where the browser supports it.
 
 See [`for_claude/metronome.md`](../for_claude/metronome.md) (agent guidance) and [`wiki/metronome.md`](../wiki/metronome.md) (reference).

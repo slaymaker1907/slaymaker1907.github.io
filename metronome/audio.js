@@ -26,6 +26,31 @@ export const SOUNDS = Object.freeze({
   soft:  { type: 'triangle', freq: 600, dur: 0.045, peak: 0.7 },
 });
 
+/*
+   iPhone silent switch. iOS gives Web Audio the "ambient" audio session by
+   default, which the ringer/silent switch mutes on the built-in speaker
+   (headphones are not muted, which is why it "works with headphones").
+   Asking for the "playback" session makes the clicks audible with the
+   switch on silent, the way a music app is. Safari 17+ exposes this as
+   navigator.audioSession. Older iOS only switches the session while an
+   HTML <audio> element is playing, so there we loop a tiny silent WAV
+   generated in memory (no audio file is shipped). Both must happen inside
+   the Start tap's user gesture.
+*/
+function silentWavUrl(seconds = 0.5, rate = 8000) {
+  const n = Math.round(seconds * rate);
+  const buf = new ArrayBuffer(44 + n);
+  const v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); // PCM
+  v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true);                   // mono, 8-bit
+  str(36, 'data'); v.setUint32(40, n, true);
+  new Uint8Array(buf, 44).fill(128);                                    // 8-bit silence
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
 const ACCENT_RATIO = 1.5;
 const SUBDIVISION_GAIN = 0.35;
 
@@ -47,6 +72,7 @@ export class Metronome {
     this.beatIndex = 0;
     this.subIndex = 0;
     this.visualTimers = new Set();
+    this.keepAlive = null; // looping silent <audio>, older-iOS fallback only
   }
 
   get playing() {
@@ -56,6 +82,8 @@ export class Metronome {
   /** Must be called from a user gesture (iOS requires it to unlock audio). */
   async start() {
     if (this.playing) return;
+    // Before any await, so it still counts as part of the user's tap.
+    this.requestPlaybackSession();
     if (!this.ctx) {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       this.ctx = new Ctor();
@@ -74,6 +102,26 @@ export class Metronome {
     this.timer = null;
     for (const t of this.visualTimers) clearTimeout(t);
     this.visualTimers.clear();
+    if (this.keepAlive) this.keepAlive.pause();
+  }
+
+  /** Make clicks audible with the iPhone silent switch on (see silentWavUrl). */
+  requestPlaybackSession() {
+    try {
+      if (navigator.audioSession) {
+        navigator.audioSession.type = 'playback';
+        return;
+      }
+    } catch {
+      /* Fall through to the <audio> fallback. */
+    }
+    if (!this.keepAlive) {
+      this.keepAlive = new Audio(silentWavUrl());
+      this.keepAlive.loop = true;
+    }
+    this.keepAlive.play().catch(() => {
+      /* Not allowed or unsupported; playback still works, just not past the switch. */
+    });
   }
 
   /** Queue every click that falls inside the lookahead window. */

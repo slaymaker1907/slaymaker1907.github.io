@@ -81,7 +81,7 @@ One `localStorage` entry, key `metronome-v1:settings`, holds a JSON object:
 4. Repeated taps on the same control within the chosen guard window are ignored.
 5. Keyboard: Space starts or stops, arrow keys step, Home returns to the ramp start while ramp mode is on.
 
-On iPhone, the hardware silent switch can mute Web Audio output.
+On iPhone the metronome plays through the speaker even with the silent switch on. Pressing Start asks iOS for the "playback" audio session that music apps use. On Safari 17+ this uses `navigator.audioSession`; older iOS gets a looping silent sound instead.
 
 ## Where it is listed
 
