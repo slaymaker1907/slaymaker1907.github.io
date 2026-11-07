@@ -35,3 +35,7 @@ Read this before working in `metronome/`, a dependency-free browser metronome wh
 ## Testing
 
 There is no repo test runner. Verify `tempo.js` by copying it to a `.mjs` file and running assertions in Node. Verify the UI with Playwright in a phone viewport (the pre-installed Chromium works with `--no-sandbox`). Check for console errors, rapid double-taps on Faster (only one marking should advance), Start/Stop, and that settings survive a reload.
+
+## Homepage listing
+
+The homepage gallery (`index.html`) is generated from `_data/apps.yml`, not from a directory scan. The metronome has an entry under the Music category. Any new app needs an entry there as well as its directory, or it stays reachable only by direct URL.

@@ -17,6 +17,9 @@
     - title: Music Practice Tracker
       url: /music-practice-tracker/
       description: Randomize and track musical practice exercises.
+    - title: Metronome
+      url: /metronome/
+      description: Metronome that steps through the traditional Maelzel markings, with a practice ramp.
     - title: Web Organ
       url: /mother/
       description: Play tones with your keyboard (Tone.js).

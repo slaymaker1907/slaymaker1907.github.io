@@ -72,3 +72,7 @@ One `localStorage` entry, key `metronome-v1:settings`, holds a JSON object:
 5. Keyboard: Space starts or stops, arrow keys step, Home returns to the ramp start.
 
 On iPhone, the hardware silent switch can mute Web Audio output.
+
+## Where it is listed
+
+The app is reachable at `/metronome/`, and it also appears on the site homepage. The homepage gallery is built from `_data/apps.yml`, which holds the Metronome entry under the Music category.
