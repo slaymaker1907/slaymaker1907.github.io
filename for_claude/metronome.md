@@ -11,7 +11,7 @@ Read this before working in `metronome/`, a dependency-free browser metronome wh
 
 ## Invariants you MUST preserve
 
-1. **State is a rung index, never a free BPM.** `state.rung` indexes `MARKINGS`. Every tempo the app can play is a real marking. Do not add a free-entry BPM field or a tap-tempo control. Both were explicitly ruled out.
+1. **State is a rung index, never a free BPM.** `state.rung` indexes `MARKINGS`. Every tempo the app can play is a real marking. Typed tempos go through `rungAtOrAbove()` in `tempo.js`, which rounds up to the next marking (61 becomes 63), clamps to 40–208, and returns `null` for non-numbers. Do not add free BPM storage or a tap-tempo control. Tap-tempo was explicitly ruled out.
 2. **Subdivision defaults to `off`.** `off` means one click per beat. Keep the default and keep the setting persisted.
 3. **Timing comes from `AudioContext.currentTime`, never from `setInterval` callbacks.** The `setInterval` only wakes the scheduler, which queues clicks within `LOOKAHEAD_S` (0.1 s). Do not schedule clicks inside the UI event path.
 4. **Tempo changes apply to the next click the scheduler queues**, which can lag up to the lookahead window. Do not add a restart or gap on tempo change.
@@ -19,14 +19,16 @@ Read this before working in `metronome/`, a dependency-free browser metronome wh
 6. **The repeat guard is per control, timestamp-based.** `guarded()` in `app.js` ignores a second click on the same control within `state.guardMs` (default 400 ms; choices 0/250/400/700). Step, ramp, and Start/Stop buttons are guarded. Keyboard shortcuts route through `button.click()` so they share the guard.
 7. **Activation is `click`, never `pointerdown`.** Browsers only fire `click` when the release lands on the same element, which is what protects a tremor-shaky press from firing by accident.
 8. **No sliders, drags, swipes, long-presses, or small steppers.** Every control is at least 56px tall (`--min-target`). Volume and subdivision are segmented buttons. Start/stop is the largest control.
-9. **The lock-while-playing mode is intentionally absent.** The user declined it. Do not reintroduce it.
+9. **Typing a tempo is press-and-hold on `#bpm`, and only that.** A `HOLD_MS` (600 ms) hold opens `#bpm-input`. A short tap does nothing, so a tremor tap cannot open it. Pointer leave or cancel cancels the hold. Enter or blur commits, and Escape cancels. Blur commits without refocusing, because refocusing would swallow the tap on whatever the user pressed next. Space and Enter on the focused number open the same editor. The global Space shortcut skips `#bpm` so it does not also start playback.
+
+9a. **The lock-while-playing mode is intentionally absent.** The user declined it. Do not reintroduce it.
 10. **Persistence is one `localStorage` key, `metronome-v1:settings`.** `sanitize()` coerces anything read back into a valid settings object, so a corrupt or hand-edited value falls back to defaults. Storage access is wrapped in try/catch. Bump the `v1` suffix and add a migration if the shape changes incompatibly.
 11. **No dependencies and no audio files.** Clicks are oscillator envelopes. Do not add a library or sample assets.
 12. **The ramp is a one-way step toward the target.** `nextRampRung` moves one marking toward `rampTarget` in whichever direction is needed, and stops at the target. The button disables there.
 
 ## DOM contract (used by tests and docs)
 
-- `#bpm` (output), `#term`, `#rung-info`, `#beats` (dot container, `.beat-dot`, `.downbeat`, `.active`)
+- `#bpm` (output, focusable, `role=button`; hold or Enter to type), `#bpm-input` (number field, `hidden` except while typing), `#term`, `#rung-info`, `#beats` (dot container, `.beat-dot`, `.downbeat`, `.active`)
 - `#toggle` (Start/Stop, `aria-pressed`), `#slower`, `#faster`
 - `#ramp-start`, `#ramp-target` (selects of rung indices), `#ramp-progress`, `#ramp-text`, `#ramp-next`, `#ramp-reset`
 - `#beats-per-bar`, `#accent`, radio groups `subdivision`, `sound`, `volume`, `#guard`

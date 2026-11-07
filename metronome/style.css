@@ -134,6 +134,33 @@ h2 { font-size: 1.25rem; margin-bottom: 8px; }
 }
 @media (prefers-color-scheme: dark) { .bpm { color: var(--dot-on); } }
 
+/* The big number is also the press-and-hold target for typing a tempo.
+   Suppress the long-press text selection and callout menu on phones. */
+#bpm {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bpm-input {
+  width: 3.2ch;
+  max-width: 100%;
+  padding: 0 4px;
+  text-align: center;
+  background: var(--surface-alt);
+  border: 3px solid var(--maroon);
+  border-radius: var(--radius-sm);
+  -moz-appearance: textfield;
+}
+.bpm-input[hidden] { display: none; }
+.bpm-input::-webkit-outer-spin-button,
+.bpm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+.tempo-hint { margin: 10px 0 0; font-size: 0.9rem; }
+
 .bpm-unit {
   font-size: 1.1rem;
   font-weight: 700;

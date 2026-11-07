@@ -6,7 +6,7 @@
 
 import {
   MARKINGS, LAST_RUNG, SUBDIVISIONS, clampRung, bpmOf, termFor,
-  stepRung, nextRampRung, rampProgress, rampRemaining,
+  stepRung, nextRampRung, rampProgress, rampRemaining, rungAtOrAbove,
 } from './tempo.js';
 import { Metronome } from './audio.js';
 
@@ -74,6 +74,7 @@ const $ = (id) => document.getElementById(id);
 
 const el = {
   bpm: $('bpm'),
+  bpmInput: $('bpm-input'),
   term: $('term'),
   rungInfo: $('rung-info'),
   beats: $('beats'),
@@ -194,6 +195,90 @@ async function togglePlayback() {
   render();
 }
 
+/* ---- Typing a tempo ------------------------------------- */
+/*
+   Press and hold the big number (HOLD_MS) to open a number field. The
+   typed value is committed on Enter or when the field loses focus, and
+   rounds UP to the next marking (61 becomes 63). Escape cancels. A short
+   tap on the number does nothing, so a tremor tap cannot open the field.
+   Moving the pointer off the number cancels the hold, which is the
+   trade-off for keeping a hold from firing while a finger drifts.
+*/
+const HOLD_MS = 600;
+let holdTimer = null;
+let editing = false;
+
+function cancelHold() {
+  if (holdTimer !== null) clearTimeout(holdTimer);
+  holdTimer = null;
+}
+
+function openTempoEditor() {
+  if (editing) return;
+  editing = true;
+  el.bpmInput.value = String(bpmOf(state.rung));
+  el.bpm.hidden = true;
+  el.bpmInput.hidden = false;
+  el.bpmInput.focus();
+  el.bpmInput.select();
+}
+
+function closeTempoEditor() {
+  editing = false;
+  el.bpmInput.hidden = true;
+  el.bpm.hidden = false;
+}
+
+/* `refocus` is false on blur: the user has already moved focus to
+   whatever they tapped (Start, a step button), and stealing it back
+   would swallow that tap. */
+function commitTempoEditor({ refocus = true } = {}) {
+  if (!editing) return;
+  const rung = rungAtOrAbove(el.bpmInput.value);
+  closeTempoEditor();
+  if (rung !== null) setRung(rung);
+  if (refocus) el.bpm.focus();
+}
+
+function cancelTempoEditor() {
+  if (!editing) return;
+  closeTempoEditor();
+  el.bpm.focus();
+}
+
+el.bpm.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  cancelHold();
+  holdTimer = setTimeout(() => {
+    holdTimer = null;
+    openTempoEditor();
+  }, HOLD_MS);
+});
+for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
+  el.bpm.addEventListener(type, cancelHold);
+}
+// Long-press on phones otherwise opens the context menu.
+el.bpm.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// Keyboard: Enter or Space on the focused number opens the same field.
+el.bpm.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    openTempoEditor();
+  }
+});
+
+el.bpmInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    commitTempoEditor();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    cancelTempoEditor();
+  }
+});
+el.bpmInput.addEventListener('blur', () => commitTempoEditor({ refocus: false }));
+
 /* ---- Screen wake lock (keeps the phone awake while playing) -- */
 
 let wakeLock = null;
@@ -291,6 +376,7 @@ document.addEventListener('keydown', (e) => {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   const tag = e.target.tagName;
   if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+  if (e.target === el.bpm) return; // Enter/Space on the number opens the editor instead.
 
   switch (e.key) {
     case ' ':

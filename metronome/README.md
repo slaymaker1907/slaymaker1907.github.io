@@ -6,6 +6,7 @@ A plain-JavaScript metronome whose tempo moves only along the traditional mechan
 
 - **Start / Stop** — the large button. Keyboard: Space.
 - **Slower / Faster** — one marking at a time. Keyboard: arrow keys.
+- **Type a tempo** — press and hold the big number, type a value, and press Enter. Values that are not markings round up to the next one (61 becomes 63).
 - **Practice ramp** — pick a start and target marking, then use **Next step** and **Back to start**. Keyboard: Home returns to the start.
 - **Subdivision** — off by default. Choose 8ths, triplets, or 16ths when you want them.
 - **Ignore repeat taps for** — keeps a shaky second tap from skipping a marking or stopping playback.

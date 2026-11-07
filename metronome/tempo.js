@@ -63,6 +63,20 @@ export function rungNearest(bpm) {
   return best;
 }
 
+/**
+ * The rung for a typed tempo. A value that is not a marking rounds UP to
+ * the next one (61 becomes 63). Values below the ladder give the slowest
+ * rung, values above it the fastest. Non-numbers return null.
+ */
+export function rungAtOrAbove(bpm) {
+  const n = Number(bpm);
+  if (!Number.isFinite(n)) return null;
+  for (let i = 0; i < MARKINGS.length; i++) {
+    if (MARKINGS[i] >= n) return i;
+  }
+  return LAST_RUNG;
+}
+
 /** Move one marking up (delta > 0) or down (delta < 0), clamped to the ends. */
 export function stepRung(rung, delta) {
   return clampRung(clampRung(rung) + Math.sign(delta));

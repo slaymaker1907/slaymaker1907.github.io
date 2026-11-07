@@ -20,9 +20,13 @@
     <section class="panel tempo-panel" aria-labelledby="tempo-heading">
       <h2 id="tempo-heading" class="visually-hidden">Tempo</h2>
       <p class="tempo-readout">
-        <output id="bpm" class="bpm">60</output>
+        <output id="bpm" class="bpm" tabindex="0" role="button"
+                aria-label="Tempo. Press and hold, or press Enter, to type a tempo.">60</output>
+        <input id="bpm-input" class="bpm bpm-input" type="number" inputmode="numeric"
+               min="40" max="208" step="1" aria-label="Type a tempo" hidden>
         <span class="bpm-unit">BPM</span>
       </p>
+      <p class="hint tempo-hint">Press and hold the number to type a tempo.</p>
       <p id="term" class="term">Larghetto</p>
       <p id="rung-info" class="rung-info">Marking 11 of 39</p>
 

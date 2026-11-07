@@ -67,6 +67,7 @@ One `localStorage` entry, key `metronome-v1:settings`, holds a JSON object:
 
 1. The big **Start** button starts playback. Clicks are scheduled with Web Audio. The first Start unlocks audio on iOS. While playing, the beat dots light up, and the screen is kept awake where the Screen Wake Lock API exists.
 2. **Slower** and **Faster** move one marking each, and the tempo is announced to screen readers.
+2a. **Typing a tempo:** press and hold the large number for about 0.6 seconds. A number field opens with the current tempo selected. Type a value and press Enter, or tap elsewhere, to commit it. A value that is not a marking rounds **up** to the next one: 61 becomes 63. Values above 208 become 208, and values below 40 become 40. Escape cancels. Keyboard users can focus the number and press Enter.
 3. **Next step** and **Back to start** drive the practice ramp.
 4. Repeated taps on the same control within the chosen guard window are ignored.
 5. Keyboard: Space starts or stops, arrow keys step, Home returns to the ramp start.
