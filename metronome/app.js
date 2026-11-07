@@ -2,20 +2,37 @@
    Metronome — controller
    Wires the DOM to tempo.js (the model) and audio.js (the engine).
    The only tempo state is `state.rung`, a rung index into MARKINGS.
+
+   Ramp: while `state.rampMode` is false the ramp follows the tempo
+   (target = current tempo, start = RAMP_LEAD_STEPS below it) and is
+   re-derived in setRung(). While it is true, start and target are
+   frozen until End ramp.
+
+   Recent tempi: a tempo is recorded only after playback has run
+   continuously at that tempo for RECENT_DWELL_MS, and never in ramp
+   mode. One timer, armRecentTimer(), enforces that.
    ============================================================ */
 
 import {
-  MARKINGS, LAST_RUNG, SUBDIVISIONS, clampRung, bpmOf, termFor,
-  stepRung, nextRampRung, rampProgress, rampRemaining, rungAtOrAbove,
+  MARKINGS, LAST_RUNG, SUBDIVISIONS, RAMP_LEAD_STEPS,
+  clampRung, bpmOf, termFor, stepRung, nextRampRung, rampProgress,
+  rampRemaining, defaultRampStart, cleanRecent, pushRecent,
 } from './tempo.js';
 import { Metronome } from './audio.js';
 
 const STORAGE_KEY = 'metronome-v1:settings';
+const RECENT_DWELL_MS = 30000;
+
+const RAMP_HINT_OFF =
+  `Target follows the current tempo; Start is ${RAMP_LEAD_STEPS} markings below. Press Start ramp to begin.`;
+const RAMP_HINT_ON = 'Start low, then move up one marking at a time to your target.';
 
 const DEFAULTS = Object.freeze({
   rung: 10,          // 60 BPM
-  rampStart: 10,     // 60 BPM
-  rampTarget: 26,    // 120 BPM
+  rampMode: false,
+  rampStart: 6,      // 52 BPM: RAMP_LEAD_STEPS below 60
+  rampTarget: 10,    // 60 BPM: follows the tempo while rampMode is false
+  recent: [],
   beatsPerBar: 4,
   accent: true,
   subdivision: 'off',
@@ -32,15 +49,20 @@ const VOLUME_CHOICES = [1, 2, 3, 4];
 
 /** Coerce anything read from storage into a valid settings object. */
 function sanitize(raw) {
-  const out = { ...DEFAULTS };
+  const out = { ...DEFAULTS, recent: [] };
   if (!raw || typeof raw !== 'object') return out;
   const int = (v, lo, hi) => {
     const n = Math.round(Number(v));
     return Number.isFinite(n) && n >= lo && n <= hi ? n : null;
   };
   out.rung = clampRung(int(raw.rung, 0, LAST_RUNG) ?? DEFAULTS.rung);
-  out.rampStart = clampRung(int(raw.rampStart, 0, LAST_RUNG) ?? DEFAULTS.rampStart);
-  out.rampTarget = clampRung(int(raw.rampTarget, 0, LAST_RUNG) ?? DEFAULTS.rampTarget);
+  out.rampMode = typeof raw.rampMode === 'boolean' ? raw.rampMode : DEFAULTS.rampMode;
+  out.rampStart = clampRung(int(raw.rampStart, 0, LAST_RUNG) ?? defaultRampStart(out.rung));
+  // Outside ramp mode the target is always the current tempo.
+  out.rampTarget = out.rampMode
+    ? clampRung(int(raw.rampTarget, 0, LAST_RUNG) ?? out.rung)
+    : out.rung;
+  out.recent = cleanRecent(raw.recent);
   out.beatsPerBar = int(raw.beatsPerBar, 1, 12) ?? DEFAULTS.beatsPerBar;
   out.accent = typeof raw.accent === 'boolean' ? raw.accent : DEFAULTS.accent;
   out.subdivision = Object.prototype.hasOwnProperty.call(SUBDIVISIONS, raw.subdivision)
@@ -55,7 +77,7 @@ function loadState() {
   try {
     return sanitize(JSON.parse(localStorage.getItem(STORAGE_KEY)));
   } catch {
-    return { ...DEFAULTS };
+    return sanitize(null);
   }
 }
 
@@ -73,20 +95,26 @@ const state = loadState();
 const $ = (id) => document.getElementById(id);
 
 const el = {
+  tempoPanel: $('tempo-panel'),
   bpm: $('bpm'),
-  bpmInput: $('bpm-input'),
+  tempoSelect: $('tempo-select'),
   term: $('term'),
   rungInfo: $('rung-info'),
   beats: $('beats'),
   toggle: $('toggle'),
   slower: $('slower'),
   faster: $('faster'),
+  recentTempi: $('recent-tempi'),
+  rampHint: $('ramp-hint'),
+  rampBegin: $('ramp-begin'),
+  rampRunning: $('ramp-running'),
   rampStart: $('ramp-start'),
   rampTarget: $('ramp-target'),
   rampProgress: $('ramp-progress'),
   rampText: $('ramp-text'),
   rampNext: $('ramp-next'),
   rampReset: $('ramp-reset'),
+  rampEnd: $('ramp-end'),
   beatsPerBar: $('beats-per-bar'),
   accent: $('accent'),
   guard: $('guard'),
@@ -106,6 +134,16 @@ const metronome = new Metronome({
 });
 
 /* ---- Rendering ------------------------------------------- */
+
+/** One option per marking: value is the rung, text is "BPM · term". */
+function buildTempoOptions() {
+  el.tempoSelect.replaceChildren(...MARKINGS.map((bpm, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    opt.textContent = `${bpm} BPM · ${termFor(bpm)}`;
+    return opt;
+  }));
+}
 
 function buildRungOptions(select) {
   select.replaceChildren(...MARKINGS.map((bpm, i) => {
@@ -137,19 +175,61 @@ function clearBeatHighlight() {
   for (const dot of el.beats.children) dot.classList.remove('active');
 }
 
+/**
+ * Rebuild the recent buttons only when the list changes, so a button that
+ * was just tapped keeps keyboard focus. Otherwise just move aria-pressed.
+ */
+function renderRecent() {
+  const key = state.recent.join(',');
+  if (el.recentTempi.dataset.key !== key) {
+    el.recentTempi.dataset.key = key;
+    if (state.recent.length === 0) {
+      const note = document.createElement('p');
+      note.className = 'hint recent-empty';
+      note.textContent = 'Tempos you play for 30 seconds show up here.';
+      el.recentTempi.replaceChildren(note);
+    } else {
+      el.recentTempi.replaceChildren(...state.recent.map((rung) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'recent-btn';
+        btn.dataset.rung = String(rung);
+        btn.textContent = String(bpmOf(rung));
+        return btn;
+      }));
+    }
+  }
+  for (const btn of el.recentTempi.querySelectorAll('button[data-rung]')) {
+    const rung = Number(btn.dataset.rung);
+    btn.setAttribute('aria-pressed', String(rung === state.rung));
+    btn.setAttribute('aria-label', `${bpmOf(rung)} BPM, ${termFor(bpmOf(rung))}`);
+  }
+}
+
 function render() {
   const bpm = bpmOf(state.rung);
   const term = termFor(bpm);
 
   el.bpm.textContent = String(bpm);
+  el.tempoSelect.value = String(state.rung);
   el.term.textContent = term;
-  el.rungInfo.textContent = `Marking ${state.rung + 1} of ${MARKINGS.length}`;
+  el.rungInfo.textContent = `Marking ${state.rung + 1} of ${MARKINGS.length}`
+    + (state.rampMode ? '\u00a0· Ramp\u00a0mode' : '');
+  el.tempoPanel.classList.toggle('ramp-active', state.rampMode);
 
   el.toggle.textContent = metronome.playing ? 'Stop' : 'Start';
   el.toggle.setAttribute('aria-pressed', String(metronome.playing));
 
   el.slower.disabled = state.rung === 0;
   el.faster.disabled = state.rung === LAST_RUNG;
+
+  renderRecent();
+
+  el.rampStart.value = String(state.rampStart);
+  el.rampTarget.value = String(state.rampTarget);
+  el.rampHint.textContent = state.rampMode ? RAMP_HINT_ON : RAMP_HINT_OFF;
+  el.rampBegin.hidden = state.rampMode;
+  el.rampRunning.hidden = !state.rampMode;
 
   const progress = Math.round(rampProgress(state.rung, state.rampStart, state.rampTarget) * 100);
   el.rampProgress.value = progress;
@@ -171,11 +251,23 @@ function announceTempo() {
 
 /* ---- Actions --------------------------------------------- */
 
-/** Change the tempo to a rung. Saves and re-renders; optionally announces. */
+/** Outside ramp mode the ramp follows the tempo. Called on every tempo change. */
+function followTempoInRamp() {
+  state.rampTarget = state.rung;
+  state.rampStart = defaultRampStart(state.rung);
+}
+
+/**
+ * Change the tempo to a rung. This is the only place the ramp is re-derived
+ * (outside ramp mode), and the only place the recent timer is re-armed on
+ * a tempo change. Saves and re-renders; optionally announces.
+ */
 function setRung(rung, { announce = true } = {}) {
   state.rung = clampRung(rung);
+  if (!state.rampMode) followTempoInRamp();
   saveState();
   render();
+  armRecentTimer();
   if (announce) announceTempo();
 }
 
@@ -192,92 +284,47 @@ async function togglePlayback() {
       el.announce.textContent = 'Audio is not available in this browser.';
     }
   }
+  armRecentTimer();
   render();
 }
 
-/* ---- Typing a tempo ------------------------------------- */
+/* ---- Recent tempi ---------------------------------------- */
 /*
-   Press and hold the big number (HOLD_MS) to open a number field. The
-   typed value is committed on Enter or when the field loses focus, and
-   rounds UP to the next marking (61 becomes 63). Escape cancels. A short
-   tap on the number does nothing, so a tremor tap cannot open the field.
-   Moving the pointer off the number cancels the hold, which is the
-   trade-off for keeping a hold from firing while a finger drifts.
+   One timer. It is armed when playback starts, when the tempo changes,
+   and when ramp mode ends. It is cancelled when playback stops or ramp
+   mode starts. When it fires, the current tempo goes to the front of the
+   recent list. Each change restarts the 30 seconds, so a tempo only counts
+   after the metronome has played continuously at it.
 */
-const HOLD_MS = 600;
-let holdTimer = null;
-let editing = false;
+let recentTimer = null;
 
-function cancelHold() {
-  if (holdTimer !== null) clearTimeout(holdTimer);
-  holdTimer = null;
+function armRecentTimer() {
+  if (recentTimer !== null) clearTimeout(recentTimer);
+  recentTimer = null;
+  if (!metronome.playing || state.rampMode) return;
+  recentTimer = setTimeout(() => {
+    recentTimer = null;
+    if (!metronome.playing || state.rampMode) return;
+    state.recent = pushRecent(state.recent, state.rung);
+    saveState();
+    render();
+  }, RECENT_DWELL_MS);
 }
 
-function openTempoEditor() {
-  if (editing) return;
-  editing = true;
-  el.bpmInput.value = String(bpmOf(state.rung));
-  el.bpm.hidden = true;
-  el.bpmInput.hidden = false;
-  el.bpmInput.focus();
-  el.bpmInput.select();
-}
+/* Recent buttons are rebuilt on change, so the repeat guard is keyed by
+   tempo (rung) rather than by button, and clicks are delegated. */
+const recentLast = new Map();
 
-function closeTempoEditor() {
-  editing = false;
-  el.bpmInput.hidden = true;
-  el.bpm.hidden = false;
-}
-
-/* `refocus` is false on blur: the user has already moved focus to
-   whatever they tapped (Start, a step button), and stealing it back
-   would swallow that tap. */
-function commitTempoEditor({ refocus = true } = {}) {
-  if (!editing) return;
-  const rung = rungAtOrAbove(el.bpmInput.value);
-  closeTempoEditor();
-  if (rung !== null) setRung(rung);
-  if (refocus) el.bpm.focus();
-}
-
-function cancelTempoEditor() {
-  if (!editing) return;
-  closeTempoEditor();
-  el.bpm.focus();
-}
-
-el.bpm.addEventListener('pointerdown', (e) => {
-  if (e.pointerType === 'mouse' && e.button !== 0) return;
-  cancelHold();
-  holdTimer = setTimeout(() => {
-    holdTimer = null;
-    openTempoEditor();
-  }, HOLD_MS);
+el.recentTempi.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-rung]');
+  if (!btn) return;
+  const rung = Number(btn.dataset.rung);
+  const now = performance.now();
+  const last = recentLast.get(rung);
+  if (last !== undefined && now - last < state.guardMs) return;
+  recentLast.set(rung, now);
+  setRung(rung);
 });
-for (const type of ['pointerup', 'pointercancel', 'pointerleave']) {
-  el.bpm.addEventListener(type, cancelHold);
-}
-// Long-press on phones otherwise opens the context menu.
-el.bpm.addEventListener('contextmenu', (e) => e.preventDefault());
-
-// Keyboard: Enter or Space on the focused number opens the same field.
-el.bpm.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault();
-    openTempoEditor();
-  }
-});
-
-el.bpmInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    commitTempoEditor();
-  } else if (e.key === 'Escape') {
-    e.preventDefault();
-    cancelTempoEditor();
-  }
-});
-el.bpmInput.addEventListener('blur', () => commitTempoEditor({ refocus: false }));
 
 /* ---- Screen wake lock (keeps the phone awake while playing) -- */
 
@@ -306,7 +353,8 @@ document.addEventListener('visibilitychange', () => {
 /*
    A tremor can produce two clicks where one was meant. After an
    accepted press, the same control ignores further clicks for
-   state.guardMs. Only step, ramp, and start/stop controls are guarded.
+   state.guardMs. Step, ramp, start/stop, and recent-tempo controls
+   are guarded.
 */
 const lastAccepted = new WeakMap();
 
@@ -330,18 +378,48 @@ function fire(button) {
 guarded(el.toggle, togglePlayback);
 guarded(el.faster, () => setRung(stepRung(state.rung, +1)));
 guarded(el.slower, () => setRung(stepRung(state.rung, -1)));
+
+/* Tempo picker: the select is laid over the big number. */
+el.tempoSelect.addEventListener('change', () => {
+  setRung(Number(el.tempoSelect.value));
+});
+
+/* Practice ramp. Begin freezes the current start and target; the tempo
+   jumps to the start, and playback is left alone. */
+guarded(el.rampBegin, () => {
+  state.rampMode = true;
+  setRung(state.rampStart);
+});
+
+guarded(el.rampEnd, () => {
+  state.rampMode = false;
+  setRung(state.rung, { announce: false }); // re-derives start and target
+});
+
 guarded(el.rampNext, () => setRung(nextRampRung(state.rung, state.rampTarget)));
 guarded(el.rampReset, () => setRung(state.rampStart));
 
 el.rampStart.addEventListener('change', () => {
   state.rampStart = clampRung(el.rampStart.value);
-  setRung(state.rampStart);
+  if (state.rampMode) {
+    setRung(state.rampStart);
+  } else {
+    // Outside ramp mode a chosen Start sticks until the tempo changes.
+    saveState();
+    render();
+  }
 });
 
 el.rampTarget.addEventListener('change', () => {
-  state.rampTarget = clampRung(el.rampTarget.value);
-  saveState();
-  render();
+  const target = clampRung(el.rampTarget.value);
+  if (state.rampMode) {
+    state.rampTarget = target;
+    saveState();
+    render();
+  } else {
+    // Outside ramp mode the target is the tempo itself.
+    setRung(target);
+  }
 });
 
 el.beatsPerBar.addEventListener('change', () => {
@@ -369,14 +447,13 @@ for (const [name, key] of [['subdivision', 'subdivision'], ['sound', 'sound'], [
   });
 }
 
-/* Keyboard: Space start/stop, arrows step, Home returns to the ramp start.
-   Keys are ignored while a form control or button has focus, because
-   those already respond natively (and arrows change selects). */
+/* Keyboard: Space start/stop, arrows step, Home returns to the ramp start
+   (ramp mode only). Keys are ignored while a form control or button has
+   focus, because those already respond natively (and arrows change selects). */
 document.addEventListener('keydown', (e) => {
   if (e.altKey || e.ctrlKey || e.metaKey) return;
   const tag = e.target.tagName;
   if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
-  if (e.target === el.bpm) return; // Enter/Space on the number opens the editor instead.
 
   switch (e.key) {
     case ' ':
@@ -394,6 +471,7 @@ document.addEventListener('keydown', (e) => {
       fire(el.slower);
       break;
     case 'Home':
+      if (!state.rampMode) break;
       e.preventDefault();
       fire(el.rampReset);
       break;
@@ -405,10 +483,9 @@ document.addEventListener('keydown', (e) => {
 /* ---- Initial render -------------------------------------- */
 
 function init() {
+  buildTempoOptions();
   buildRungOptions(el.rampStart);
   buildRungOptions(el.rampTarget);
-  el.rampStart.value = String(state.rampStart);
-  el.rampTarget.value = String(state.rampTarget);
 
   el.beatsPerBar.replaceChildren(...Array.from({ length: 12 }, (_, i) => {
     const opt = document.createElement('option');

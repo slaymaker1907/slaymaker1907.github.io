@@ -1,10 +1,11 @@
 /* ============================================================
    Metronome — tempo model (pure, DOM-free, no side effects)
 
-   Everything about *which* tempos exist and how the practice ramp
-   moves lives here so it can be tested in Node. The audio layer
-   (audio.js) and the UI (app.js) import from this file; nothing in
-   here touches the DOM, Web Audio, or storage.
+   Everything about *which* tempos exist, how the practice ramp
+   moves, and how the recent-tempi list is kept lives here so it
+   can be tested in Node. The audio layer (audio.js) and the UI
+   (app.js) import from this file; nothing in here touches the DOM,
+   Web Audio, or storage.
 
    Invariant: the app stores a RUNG INDEX into MARKINGS, never a free
    BPM, so every tempo the metronome can ever play is a real marking.
@@ -42,6 +43,12 @@ export const SUBDIVISIONS = Object.freeze({
   '16': 4,
 });
 
+/** When a ramp is not running, its Start sits this many markings below the tempo. */
+export const RAMP_LEAD_STEPS = 4;
+
+/** How many tempi the recent list keeps. */
+export const RECENT_MAX = 6;
+
 /** Clamp any value to a valid rung index (rounds, NaN becomes 0). */
 export function clampRung(index) {
   const n = Math.round(Number(index));
@@ -63,20 +70,6 @@ export function rungNearest(bpm) {
   return best;
 }
 
-/**
- * The rung for a typed tempo. A value that is not a marking rounds UP to
- * the next one (61 becomes 63). Values below the ladder give the slowest
- * rung, values above it the fastest. Non-numbers return null.
- */
-export function rungAtOrAbove(bpm) {
-  const n = Number(bpm);
-  if (!Number.isFinite(n)) return null;
-  for (let i = 0; i < MARKINGS.length; i++) {
-    if (MARKINGS[i] >= n) return i;
-  }
-  return LAST_RUNG;
-}
-
 /** Move one marking up (delta > 0) or down (delta < 0), clamped to the ends. */
 export function stepRung(rung, delta) {
   return clampRung(clampRung(rung) + Math.sign(delta));
@@ -89,6 +82,14 @@ export function termFor(bpm) {
     if (bpm >= floor) term = name;
   }
   return term;
+}
+
+/**
+ * The ramp Start that goes with a tempo when no ramp is running:
+ * `steps` markings below it, never below the slowest marking.
+ */
+export function defaultRampStart(rung, steps = RAMP_LEAD_STEPS) {
+  return clampRung(clampRung(rung) - steps);
 }
 
 /**
@@ -117,6 +118,34 @@ export function rampProgress(current, start, target) {
 /** How many rungs remain between `current` and `target`. */
 export function rampRemaining(current, target) {
   return Math.abs(clampRung(target) - clampRung(current));
+}
+
+/**
+ * Keep only valid rung indices from a list: integers in 0..LAST_RUNG,
+ * first occurrence wins, at most `max` entries. Anything else is dropped.
+ */
+export function cleanRecent(list, max = RECENT_MAX) {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+  for (const v of list) {
+    if (out.length >= max) break;
+    if (!Number.isInteger(v) || v < 0 || v > LAST_RUNG) continue;
+    if (out.includes(v)) continue;
+    out.push(v);
+  }
+  return out;
+}
+
+/**
+ * Most-recent-first list of tempi. `rung` moves to the front (inserted if
+ * absent), duplicates are removed, and the result is capped at `max`.
+ * Junk entries in `list` are dropped. A non-number `rung` inserts nothing.
+ * Returns a NEW array; `list` is never mutated.
+ */
+export function pushRecent(list, rung, max = RECENT_MAX) {
+  const base = Array.isArray(list) ? list : [];
+  if (typeof rung !== 'number' || !Number.isFinite(rung)) return cleanRecent(base, max);
+  return cleanRecent([clampRung(rung), ...base], max);
 }
 
 /** Clicks per beat for a subdivision key ("off" | "8" | "3" | "16"). */

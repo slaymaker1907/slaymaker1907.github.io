@@ -6,8 +6,9 @@ A plain-JavaScript metronome whose tempo moves only along the traditional mechan
 
 - **Start / Stop** — the large button. Keyboard: Space.
 - **Slower / Faster** — one marking at a time. Keyboard: arrow keys.
-- **Type a tempo** — press and hold the big number, type a value, and press Enter. Values that are not markings round up to the next one (61 becomes 63).
-- **Practice ramp** — pick a start and target marking, then use **Next step** and **Back to start**. Keyboard: Home returns to the start.
+- **Pick a tempo** — tap the big number to open the tempo list (a wheel on iPhone) and choose any of the 39 markings.
+- **Recent tempi** — a tempo you play for 30 seconds without a change appears below Slower and Faster. Tap one to go back to it. Nothing is recorded during a ramp.
+- **Practice ramp** — by default the ramp target follows the tempo and the start is 4 markings below it. Press **Start ramp** to freeze the start and target and move to the start. Then use **Next step** and **Back to start**, and press **End ramp** when you finish. Flames burn on both sides of the tempo while a ramp is running. Keyboard: Home returns to the start during a ramp.
 - **Subdivision** — off by default. Choose 8ths, triplets, or 16ths when you want them.
 - **Ignore repeat taps for** — keeps a shaky second tap from skipping a marking or stopping playback.
 

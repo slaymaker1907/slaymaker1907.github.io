@@ -25,6 +25,12 @@
   --dot-on:        #800000;
 
   --target:        #2f6b3a;   /* "target reached" green, text ~6:1 */
+
+  /* Ramp-mode flames (decorative) and the panel's warm ramp border. */
+  --flame-outer:   #9d0208;
+  --flame-mid:     #e85d04;
+  --flame-core:    #ffba08;
+  --ramp-border:   #e85d04;
   --focus-ring:    #d4a017;   /* gold ring: visible on cream and maroon */
 
   --shadow:        0 2px 4px rgba(74, 0, 6, .08),
@@ -111,10 +117,61 @@ h2 { font-size: 1.25rem; margin-bottom: 8px; }
   outline-offset: 3px;
 }
 
+[hidden] { display: none !important; }
+
 /* ---- Tempo display -------------------------------------- */
 .tempo-panel {
+  position: relative;
+  overflow: hidden;
   text-align: center;
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-alt) 100%);
+  transition: padding .25s ease, border-color .25s ease, box-shadow .25s ease;
+}
+
+/* ---- Ramp mode: flames on both sides of the tempo block ---------- */
+/* app.js toggles .ramp-active on #tempo-panel; everything here is
+   decorative (the text "Ramp mode" in #rung-info carries the meaning).
+   The side padding grows so the flames never sit under the number or a
+   wide row of beat dots. */
+.tempo-panel.ramp-active {
+  padding-inline: 64px;
+  border-color: var(--ramp-border);
+  box-shadow: 0 0 0 1px var(--ramp-border), 0 6px 22px rgba(232, 93, 4, .25);
+}
+
+.flame-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.ramp-flames {
+  position: absolute;
+  bottom: 0;
+  width: 56px;
+  height: 117px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .4s ease;
+}
+.ramp-flames.left  { left: 4px; }
+.ramp-flames.right { right: 4px; transform: scaleX(-1); }
+.tempo-panel.ramp-active .ramp-flames { opacity: 1; }
+
+.flame { transform-box: fill-box; transform-origin: 50% 100%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tempo-panel.ramp-active .flame    { animation: flame-flicker 1.1s ease-in-out infinite; }
+  .tempo-panel.ramp-active .flame.f2 { animation-duration: .9s;  animation-delay: -.3s; }
+  .tempo-panel.ramp-active .flame.f3 { animation-duration: 1.3s; animation-delay: -.6s; }
+}
+
+@media (max-width: 380px) {
+  .tempo-panel.ramp-active { padding-inline: 46px; }
+  .ramp-flames { width: 40px; height: 84px; }
+}
+
+@keyframes flame-flicker {
+  0%, 100% { transform: scale(1, 1)     skewX(0deg); }
+  25%      { transform: scale(.94, 1.07) skewX(-3deg); }
+  50%      { transform: scale(1.05, .93) skewX(2deg); }
+  75%      { transform: scale(.97, 1.04) skewX(-1deg); }
 }
 
 .tempo-readout {
@@ -134,32 +191,44 @@ h2 { font-size: 1.25rem; margin-bottom: 8px; }
 }
 @media (prefers-color-scheme: dark) { .bpm { color: var(--dot-on); } }
 
-/* The big number is also the press-and-hold target for typing a tempo.
-   Suppress the long-press text selection and callout menu on phones. */
-#bpm {
-  cursor: pointer;
+/* The big number is a tap target that opens a native select. The select
+   covers the whole picker with opacity 0, so a tap lands on it and iOS
+   shows its wheel picker. Its font-size stays at 16px, because iOS zooms
+   the page when a smaller field is focused. */
+.tempo-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px 6px;
   border-radius: var(--radius-sm);
-  -webkit-user-select: none;
-  user-select: none;
-  -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
-
-.bpm-input {
-  width: 3.2ch;
-  max-width: 100%;
-  padding: 0 4px;
-  text-align: center;
-  background: var(--surface-alt);
-  border: 3px solid var(--maroon);
-  border-radius: var(--radius-sm);
-  -moz-appearance: textfield;
+.tempo-picker:has(#tempo-select:focus-visible) {
+  outline: 4px solid var(--focus-ring);
+  outline-offset: 3px;
 }
-.bpm-input[hidden] { display: none; }
-.bpm-input::-webkit-outer-spin-button,
-.bpm-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-
-.tempo-hint { margin: 10px 0 0; font-size: 0.9rem; }
+.picker-chevron {
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+#tempo-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
 
 .bpm-unit {
   font-size: 1.1rem;
@@ -341,6 +410,44 @@ legend.field-label { padding: 0; }
   outline: 4px solid var(--focus-ring);
   outline-offset: 3px;
 }
+
+/* ---- Recent tempi and ramp buttons ----------------------- */
+.btn-wide {
+  width: 100%;
+  min-height: 80px;
+  font-size: 1.4rem;
+  margin-top: 4px;
+}
+
+.recent { margin-top: 4px; }
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+}
+.recent-btn {
+  appearance: none;
+  min-height: var(--min-target);
+  padding: 10px 8px;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.recent-btn:hover { border-color: var(--maroon); }
+.recent-btn[aria-pressed="true"] {
+  background: var(--maroon);
+  color: var(--on-maroon);
+  border-color: var(--maroon);
+}
+.recent-empty { grid-column: 1 / -1; margin: 0; }
 
 /* ---- Practice ramp status -------------------------------- */
 .ramp-status { margin-top: 4px; }

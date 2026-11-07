@@ -17,16 +17,41 @@
     </header>
 
     <!-- ============ Tempo display ============ -->
-    <section class="panel tempo-panel" aria-labelledby="tempo-heading">
+    <section id="tempo-panel" class="panel tempo-panel" aria-labelledby="tempo-heading">
       <h2 id="tempo-heading" class="visually-hidden">Tempo</h2>
+
+      <!-- Ramp-mode flames: decorative, shown only while #tempo-panel has
+           .ramp-active. One flame shape (symbol) drawn in three layers
+           (outer, mid, core) and reused at three sizes per side; the right
+           cluster is the left one mirrored. Colors are CSS custom properties
+           so they inherit into the <use> shadow trees. -->
+      <svg class="flame-defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <symbol id="flame-shape" viewBox="0 0 40 64">
+          <path style="fill: var(--flame-outer)" d="M20 1C23 12 36 20 36 39C36 53 29 63 20 63C11 63 4 53 4 41C4 31 10 25 13 17C14 24 17 27 19 28C17 18 18 9 20 1Z"/>
+          <path style="fill: var(--flame-mid)" d="M21 18C24 27 31 33 31 45C31 55 26 62 20 62C14 62 9 56 9 48C9 41 13 37 15 32C16 37 18 39 20 40C19 33 19 25 21 18Z"/>
+          <path style="fill: var(--flame-core)" d="M20 36C22 42 26 46 26 52C26 58 23 62 20 62C17 62 14 59 14 54C14 49 17 46 18 43C19 46 20 46 20 46C20 42 19 39 20 36Z"/>
+        </symbol>
+      </svg>
+      <svg class="ramp-flames left" viewBox="0 0 46 96" aria-hidden="true" focusable="false">
+        <use class="flame f1" href="#flame-shape" x="4" y="24" width="30" height="72"/>
+        <use class="flame f2" href="#flame-shape" x="20" y="46" width="22" height="50"/>
+        <use class="flame f3" href="#flame-shape" x="0" y="60" width="18" height="36"/>
+      </svg>
+      <svg class="ramp-flames right" viewBox="0 0 46 96" aria-hidden="true" focusable="false">
+        <use class="flame f2" href="#flame-shape" x="4" y="24" width="30" height="72"/>
+        <use class="flame f3" href="#flame-shape" x="20" y="46" width="22" height="50"/>
+        <use class="flame f1" href="#flame-shape" x="0" y="60" width="18" height="36"/>
+      </svg>
       <p class="tempo-readout">
-        <output id="bpm" class="bpm" tabindex="0" role="button"
-                aria-label="Tempo. Press and hold, or press Enter, to type a tempo.">60</output>
-        <input id="bpm-input" class="bpm bpm-input" type="number" inputmode="numeric"
-               min="40" max="208" step="1" aria-label="Type a tempo" hidden>
+        <!-- Tapping the number opens a native select (the wheel picker on iOS).
+             The select sits over the whole picker with opacity 0. -->
+        <span class="tempo-picker">
+          <span id="bpm" class="bpm">60</span>
+          <span class="picker-chevron" aria-hidden="true">&#9662;</span>
+          <select id="tempo-select" aria-label="Tempo"></select>
+        </span>
         <span class="bpm-unit">BPM</span>
       </p>
-      <p class="hint tempo-hint">Press and hold the number to type a tempo.</p>
       <p id="term" class="term">Larghetto</p>
       <p id="rung-info" class="rung-info">Marking 11 of 39</p>
 
@@ -49,12 +74,19 @@
           <span>Faster<span class="visually-hidden"> one marking</span></span>
         </button>
       </div>
+
+      <!-- Filled by app.js. A tempo lands here after 30 seconds of continuous
+           play outside ramp mode. -->
+      <div class="recent" role="group" aria-labelledby="recent-heading">
+        <h3 id="recent-heading" class="field-label">Recent tempi</h3>
+        <div id="recent-tempi" class="recent-grid"></div>
+      </div>
     </section>
 
     <!-- ============ Practice ramp ============ -->
     <section class="panel" aria-labelledby="ramp-heading">
       <h2 id="ramp-heading">Practice ramp</h2>
-      <p class="hint">Start low, then move up one marking at a time to your target.</p>
+      <p id="ramp-hint" class="hint">Target follows the current tempo; Start is 4 markings below. Press Start ramp to begin.</p>
 
       <div class="field-row">
         <label class="field">
@@ -67,14 +99,21 @@
         </label>
       </div>
 
-      <div class="ramp-status">
-        <progress id="ramp-progress" max="100" value="0" aria-label="Ramp progress">0%</progress>
-        <p id="ramp-text" class="ramp-text" aria-live="polite">Set a start and target.</p>
-      </div>
+      <button id="ramp-begin" type="button" class="btn btn-primary btn-wide">Start ramp</button>
 
-      <div class="button-row">
-        <button id="ramp-next" type="button" class="btn btn-secondary">Next step</button>
-        <button id="ramp-reset" type="button" class="btn btn-secondary">Back to start</button>
+      <div id="ramp-running" hidden>
+        <div class="ramp-status">
+          <progress id="ramp-progress" max="100" value="0" aria-label="Ramp progress">0%</progress>
+          <p id="ramp-text" class="ramp-text" aria-live="polite">Set a start and target.</p>
+        </div>
+
+        <div class="button-row">
+          <button id="ramp-next" type="button" class="btn btn-secondary">Next step</button>
+          <button id="ramp-reset" type="button" class="btn btn-secondary">Back to start</button>
+        </div>
+        <div class="button-row">
+          <button id="ramp-end" type="button" class="btn btn-secondary">End ramp</button>
+        </div>
       </div>
     </section>
 
